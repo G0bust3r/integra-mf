@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR" class="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -7,119 +7,170 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <div class="page-shell">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">Integra MF</p>
-          <h1>Converta extratos, prints e exportações em CSV pronto para o Minhas Finanças.</h1>
-          <p class="lede">
-            Envie imagens, PDFs, CSV, OFX ou XLSX. O app tenta reconhecer os lançamentos, aplica regras por palavra-chave e te deixa revisar tudo antes da exportação final.
-          </p>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-block">
+          <div class="brand-mark">IM</div>
+          <div>
+            <p class="eyebrow">Integra MF</p>
+            <h1>Importação inteligente para o Minhas Finanças</h1>
+          </div>
         </div>
-        <div class="hero-card">
-          <p class="card-kicker">Formato de saída</p>
+
+        <div class="sidebar-card">
+          <p class="card-label">Fluxo</p>
+          <ol class="step-list">
+            <li>Envie prints, PDFs, XLSX, CSV ou OFX</li>
+            <li>Aplique regras e padrões do seu financeiro</li>
+            <li>Revise a tabela e exporte o CSV final</li>
+          </ol>
+        </div>
+
+        <div class="sidebar-card accent-card">
+          <p class="card-label">Formato de saída</p>
           <code>Descrição,Valor,Data Venc,Categoria,Subcategoria,Conta,Cartão,Observações[,Data Lançamento]</code>
           <p class="muted">Sem cabeçalho, decimal com ponto e data em DD/MM/AAAA.</p>
         </div>
-      </header>
 
-      <main class="grid">
-        <section class="panel upload-panel">
-          <div class="panel-head">
-            <h2>1. Entrada dos arquivos</h2>
-            <p>Selecione vários arquivos de uma vez. Prints e PDFs passam por OCR nativo do macOS.</p>
-          </div>
-          <label class="dropzone" for="files">
-            <input id="files" type="file" multiple accept=".csv,.txt,.xlsx,.ofx,.pdf,.png,.jpg,.jpeg,.heic" />
-            <span>Arraste os arquivos aqui ou clique para selecionar</span>
-            <small>Suporta extratos bancários, faturas e prints de movimentações.</small>
-          </label>
-          <div class="actions">
-            <button id="processBtn" class="primary">Processar arquivos</button>
-            <button id="sampleBtn" class="ghost" type="button">Carregar exemplo</button>
-          </div>
-          <ul id="selectedFiles" class="file-list"></ul>
-          <div id="diagnostics" class="diagnostics"></div>
-        </section>
+        <div class="sidebar-card">
+          <p class="card-label">Observações</p>
+          <ul class="sidebar-notes">
+            <li>Prints e PDFs usam OCR local do macOS.</li>
+            <li>Você pode revisar tudo antes de exportar.</li>
+            <li>Regras por palavra-chave aceleram a categorização.</li>
+          </ul>
+        </div>
+      </aside>
 
-        <section class="panel settings-panel">
-          <div class="panel-head">
-            <h2>2. Regras e padrões</h2>
-            <p>Esses valores ajudam a completar os lançamentos em lote antes da revisão.</p>
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Painel Operacional</p>
+            <h2>Converta extratos em lançamentos prontos para importar.</h2>
+            <p class="lede">
+              O app reconhece linhas automaticamente, preenche dados em lote e te deixa ajustar o resultado final antes de baixar o CSV.
+            </p>
           </div>
-          <div class="form-grid">
-            <label>
-              Conta padrão
-              <input id="defaultAccount" placeholder="Ex.: Itaú" />
-            </label>
-            <label>
-              Cartão padrão
-              <input id="defaultCard" placeholder="Ex.: Nubank" />
-            </label>
-            <label>
-              Vencimento do lote
-              <input id="defaultDueDate" placeholder="DD/MM/AAAA" />
-            </label>
-            <label>
-              Observação padrão
-              <input id="defaultObservation" placeholder="Opcional" />
-            </label>
-          </div>
-          <label class="rules">
-            Regras por palavra-chave
-            <textarea id="rulesText" rows="8" placeholder="mercado=Alimentação>Supermercado&#10;uber=Transporte>App&#10;netflix=Serviços>Streaming"></textarea>
-          </label>
-          <div class="actions">
-            <button id="applyDefaultsBtn" class="secondary" type="button">Aplicar padrões</button>
-            <button id="clearBtn" class="ghost" type="button">Limpar tabela</button>
-          </div>
-        </section>
-
-        <section class="panel table-panel">
-          <div class="panel-head table-head">
-            <div>
-              <h2>3. Revisão final</h2>
-              <p>Edite o que precisar e exporte só as linhas marcadas.</p>
+          <div class="topbar-stats">
+            <div class="metric-card">
+              <strong id="recordCount">0</strong>
+              <span>linhas</span>
             </div>
-            <div class="stats">
-              <div class="stat">
-                <strong id="recordCount">0</strong>
-                <span>linhas</span>
-              </div>
-              <div class="stat">
-                <strong id="selectedCount">0</strong>
-                <span>selecionadas</span>
-              </div>
+            <div class="metric-card">
+              <strong id="selectedCount">0</strong>
+              <span>selecionadas</span>
             </div>
           </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>OK</th>
-                  <th>Origem</th>
-                  <th>Descrição</th>
-                  <th>Valor</th>
-                  <th>Data venc.</th>
-                  <th>Categoria</th>
-                  <th>Subcategoria</th>
-                  <th>Conta</th>
-                  <th>Cartão</th>
-                  <th>Observações</th>
-                  <th>Data lanç.</th>
-                </tr>
-              </thead>
-              <tbody id="recordsBody">
-                <tr class="empty-state">
-                  <td colspan="11">Nenhum lançamento carregado ainda.</td>
-                </tr>
-              </tbody>
-            </table>
+        </header>
+
+        <section class="hero-banner">
+          <div class="hero-copy">
+            <p class="eyebrow">Baseado no seu layout de referência</p>
+            <h3>Visual técnico, escuro e orientado a produtividade.</h3>
+            <p>
+              Mantive o fluxo do Integra MF e adaptei a apresentação para uma linguagem próxima ao `FortiHub`: superfícies em camadas, contraste alto e sensação de dashboard.
+            </p>
           </div>
-          <div class="actions sticky-actions">
-            <button id="exportBtn" class="primary" type="button">Exportar CSV</button>
+          <div class="hero-chips">
+            <span>CSV</span>
+            <span>XLSX</span>
+            <span>OFX</span>
+            <span>PDF</span>
+            <span>OCR</span>
           </div>
         </section>
+
+        <div class="content-grid">
+          <section class="panel upload-panel">
+            <div class="panel-head">
+              <p class="card-label">Entrada</p>
+              <h3>1. Carregue os arquivos</h3>
+              <p>Selecione vários arquivos de uma vez. Prints e PDFs passam por OCR nativo do macOS.</p>
+            </div>
+            <label class="dropzone" for="files">
+              <input id="files" type="file" multiple accept=".csv,.txt,.xlsx,.ofx,.pdf,.png,.jpg,.jpeg,.heic" />
+              <span>Arraste os arquivos aqui ou clique para selecionar</span>
+              <small>Suporta extratos bancários, faturas e prints de movimentações.</small>
+            </label>
+            <div class="actions">
+              <button id="processBtn" class="primary">Processar arquivos</button>
+              <button id="sampleBtn" class="ghost" type="button">Carregar exemplo</button>
+            </div>
+            <ul id="selectedFiles" class="file-list"></ul>
+            <div id="diagnostics" class="diagnostics"></div>
+          </section>
+
+          <section class="panel settings-panel">
+            <div class="panel-head">
+              <p class="card-label">Regras</p>
+              <h3>2. Ajuste padrões do lote</h3>
+              <p>Esses valores ajudam a completar os lançamentos automaticamente antes da revisão.</p>
+            </div>
+            <div class="form-grid">
+              <label>
+                Conta padrão
+                <input id="defaultAccount" placeholder="Ex.: Itaú" />
+              </label>
+              <label>
+                Cartão padrão
+                <input id="defaultCard" placeholder="Ex.: Nubank" />
+              </label>
+              <label>
+                Vencimento do lote
+                <input id="defaultDueDate" placeholder="DD/MM/AAAA" />
+              </label>
+              <label>
+                Observação padrão
+                <input id="defaultObservation" placeholder="Opcional" />
+              </label>
+            </div>
+            <label class="rules">
+              Regras por palavra-chave
+              <textarea id="rulesText" rows="8" placeholder="mercado=Alimentação>Supermercado&#10;uber=Transporte>App&#10;netflix=Serviços>Streaming"></textarea>
+            </label>
+            <div class="actions">
+              <button id="applyDefaultsBtn" class="secondary" type="button">Aplicar padrões</button>
+              <button id="clearBtn" class="ghost" type="button">Limpar tabela</button>
+            </div>
+          </section>
+
+          <section class="panel table-panel">
+            <div class="panel-head table-head">
+              <div>
+                <p class="card-label">Revisão</p>
+                <h3>3. Revise e exporte</h3>
+                <p>Edite o que precisar e exporte apenas as linhas marcadas.</p>
+              </div>
+            </div>
+            <div class="table-wrap custom-scrollbar">
+              <table>
+                <thead>
+                  <tr>
+                    <th>OK</th>
+                    <th>Origem</th>
+                    <th>Descrição</th>
+                    <th>Valor</th>
+                    <th>Data venc.</th>
+                    <th>Categoria</th>
+                    <th>Subcategoria</th>
+                    <th>Conta</th>
+                    <th>Cartão</th>
+                    <th>Observações</th>
+                    <th>Data lanç.</th>
+                  </tr>
+                </thead>
+                <tbody id="recordsBody">
+                  <tr class="empty-state">
+                    <td colspan="11">Nenhum lançamento carregado ainda.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="actions sticky-actions">
+              <button id="exportBtn" class="primary" type="button">Exportar CSV</button>
+            </div>
+          </section>
+        </div>
       </main>
     </div>
 
@@ -141,4 +192,4 @@
 
     <script src="/static/app.js"></script>
   </body>
-  </html>
+</html>
