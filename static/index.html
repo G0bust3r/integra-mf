@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Integra MF</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Integra MF</p>
+          <h1>Converta extratos, prints e exportações em CSV pronto para o Minhas Finanças.</h1>
+          <p class="lede">
+            Envie imagens, PDFs, CSV, OFX ou XLSX. O app tenta reconhecer os lançamentos, aplica regras por palavra-chave e te deixa revisar tudo antes da exportação final.
+          </p>
+        </div>
+        <div class="hero-card">
+          <p class="card-kicker">Formato de saída</p>
+          <code>Descrição,Valor,Data Venc,Categoria,Subcategoria,Conta,Cartão,Observações[,Data Lançamento]</code>
+          <p class="muted">Sem cabeçalho, decimal com ponto e data em DD/MM/AAAA.</p>
+        </div>
+      </header>
+
+      <main class="grid">
+        <section class="panel upload-panel">
+          <div class="panel-head">
+            <h2>1. Entrada dos arquivos</h2>
+            <p>Selecione vários arquivos de uma vez. Prints e PDFs passam por OCR nativo do macOS.</p>
+          </div>
+          <label class="dropzone" for="files">
+            <input id="files" type="file" multiple accept=".csv,.txt,.xlsx,.ofx,.pdf,.png,.jpg,.jpeg,.heic" />
+            <span>Arraste os arquivos aqui ou clique para selecionar</span>
+            <small>Suporta extratos bancários, faturas e prints de movimentações.</small>
+          </label>
+          <div class="actions">
+            <button id="processBtn" class="primary">Processar arquivos</button>
+            <button id="sampleBtn" class="ghost" type="button">Carregar exemplo</button>
+          </div>
+          <ul id="selectedFiles" class="file-list"></ul>
+          <div id="diagnostics" class="diagnostics"></div>
+        </section>
+
+        <section class="panel settings-panel">
+          <div class="panel-head">
+            <h2>2. Regras e padrões</h2>
+            <p>Esses valores ajudam a completar os lançamentos em lote antes da revisão.</p>
+          </div>
+          <div class="form-grid">
+            <label>
+              Conta padrão
+              <input id="defaultAccount" placeholder="Ex.: Itaú" />
+            </label>
+            <label>
+              Cartão padrão
+              <input id="defaultCard" placeholder="Ex.: Nubank" />
+            </label>
+            <label>
+              Vencimento do lote
+              <input id="defaultDueDate" placeholder="DD/MM/AAAA" />
+            </label>
+            <label>
+              Observação padrão
+              <input id="defaultObservation" placeholder="Opcional" />
+            </label>
+          </div>
+          <label class="rules">
+            Regras por palavra-chave
+            <textarea id="rulesText" rows="8" placeholder="mercado=Alimentação>Supermercado&#10;uber=Transporte>App&#10;netflix=Serviços>Streaming"></textarea>
+          </label>
+          <div class="actions">
+            <button id="applyDefaultsBtn" class="secondary" type="button">Aplicar padrões</button>
+            <button id="clearBtn" class="ghost" type="button">Limpar tabela</button>
+          </div>
+        </section>
+
+        <section class="panel table-panel">
+          <div class="panel-head table-head">
+            <div>
+              <h2>3. Revisão final</h2>
+              <p>Edite o que precisar e exporte só as linhas marcadas.</p>
+            </div>
+            <div class="stats">
+              <div class="stat">
+                <strong id="recordCount">0</strong>
+                <span>linhas</span>
+              </div>
+              <div class="stat">
+                <strong id="selectedCount">0</strong>
+                <span>selecionadas</span>
+              </div>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>OK</th>
+                  <th>Origem</th>
+                  <th>Descrição</th>
+                  <th>Valor</th>
+                  <th>Data venc.</th>
+                  <th>Categoria</th>
+                  <th>Subcategoria</th>
+                  <th>Conta</th>
+                  <th>Cartão</th>
+                  <th>Observações</th>
+                  <th>Data lanç.</th>
+                </tr>
+              </thead>
+              <tbody id="recordsBody">
+                <tr class="empty-state">
+                  <td colspan="11">Nenhum lançamento carregado ainda.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="actions sticky-actions">
+            <button id="exportBtn" class="primary" type="button">Exportar CSV</button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <template id="rowTemplate">
+      <tr>
+        <td><input data-field="selected" type="checkbox" checked /></td>
+        <td class="source-cell"></td>
+        <td><input data-field="description" /></td>
+        <td><input data-field="amount" /></td>
+        <td><input data-field="due_date" placeholder="DD/MM/AAAA" /></td>
+        <td><input data-field="category" /></td>
+        <td><input data-field="subcategory" /></td>
+        <td><input data-field="account" /></td>
+        <td><input data-field="card" /></td>
+        <td><input data-field="observations" /></td>
+        <td><input data-field="launch_date" placeholder="DD/MM/AAAA HH:mm" /></td>
+      </tr>
+    </template>
+
+    <script src="/static/app.js"></script>
+  </body>
+  </html>
