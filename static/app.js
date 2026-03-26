@@ -707,7 +707,7 @@ async function processFiles() {
       };
       xhr.onerror = () => {
         window.clearInterval(progressFallback);
-        reject(new Error("Falha de rede ao processar arquivos."));
+        reject(new Error("Falha de conexão com o servidor. Abra o Integra MF pelo servidor local em http://127.0.0.1:8765 e tente novamente."));
       };
       xhr.onabort = () => {
         window.clearInterval(progressFallback);
