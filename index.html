@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Integra MF</title>
-    <link rel="stylesheet" href="./static/styles.css?v=4" />
+    <link rel="stylesheet" href="./static/styles.css?v=6" />
   </head>
   <body>
     <main class="page">
@@ -65,19 +65,17 @@
             </span>
           </label>
         </div>
-        <div class="defaults-grid">
-          <label>
-            Conta
-            <input id="defaultAccount" placeholder="Ex.: Itaú ou Pic Pay" />
-          </label>
-          <label>
-            Cartão
-            <input id="defaultCard" placeholder="Ex.: Nubank" />
-          </label>
-          <label>
-            Data de vencimento
-            <input id="defaultDueDate" placeholder="DD/MM/AAAA" />
-          </label>
+        <div class="selector-block">
+          <div class="selector-head">
+            <div>
+              <h3 id="selectionTitle">Selecione a conta</h3>
+              <p id="selectionSubtitle">Escolha visualmente a conta corrente que será usada nas despesas normais.</p>
+            </div>
+            <div id="selectedSummary" class="selected-summary">Nenhuma opção selecionada.</div>
+          </div>
+          <div id="walletPicker" class="wallet-picker"></div>
+        </div>
+        <div class="defaults-grid single-field">
           <label>
             Observação padrão
             <input id="defaultObservation" placeholder="Opcional" />
@@ -119,7 +117,7 @@
         <div class="panel-head adjust-head">
           <div>
             <h2>4. Ajuste manual</h2>
-            <p>Corrija os dados abaixo e exporte o CSV final.</p>
+            <p>Corrija os dados abaixo, salve um override se quiser ensinar o app, e exporte o CSV final.</p>
           </div>
           <div class="actions tight">
             <button id="applyDefaultsBtn" class="secondary" type="button">Aplicar padrões</button>
@@ -128,6 +126,16 @@
         </div>
         <div id="recordsEditor" class="records-editor">
           <div class="empty-box">Nenhum lançamento carregado ainda.</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>5. Overrides de configuração</h2>
+          <p>Se algo foi selecionado errado, ajuste no lançamento e salve como aprendizado. O app reaplica isso nas próximas importações.</p>
+        </div>
+        <div id="overridesList" class="override-list">
+          <div class="empty-box">Nenhum override salvo ainda.</div>
         </div>
       </section>
     </main>
@@ -139,8 +147,15 @@
             <input data-field="selected" type="checkbox" checked />
             <span>Incluir na exportação</span>
           </label>
-          <div class="source-chip"></div>
+          <div class="record-meta">
+            <button class="mini-button save-override-btn" type="button">Aprender este ajuste</button>
+            <div class="duplicate-badge" hidden>Possível duplicado</div>
+            <div class="learned-badge" hidden>Override aplicado</div>
+            <div class="source-chip"></div>
+          </div>
         </div>
+        <div class="duplicate-note" hidden></div>
+        <div class="learned-note" hidden></div>
         <label class="read-only-block">
           Texto entendido
           <textarea data-field="raw_text" rows="2" readonly></textarea>
@@ -193,6 +208,6 @@
       </article>
     </template>
 
-    <script src="./static/app.js?v=4"></script>
+    <script src="./static/app.js?v=7"></script>
   </body>
 </html>

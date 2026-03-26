@@ -28,9 +28,14 @@ ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "static"
 INDEX_FILE = ROOT / "index.html"
 OCR_SCRIPT = ROOT / "scripts" / "ocr.swift"
+DATA_DIR = ROOT / "data"
+OVERRIDES_FILE = DATA_DIR / "overrides.json"
 HOST = "127.0.0.1"
 PORT = 8765
 TESSERACT_BIN = "tesseract"
+REFERENCE_FILE_CANDIDATES = [
+    Path("/Users/lmv/Downloads/picpay-cartao-credito-atual.xlsx"),
+]
 
 DATE_PATTERNS = [
     "%d/%m/%Y",
@@ -95,6 +100,11 @@ class ParsedRecord:
     launch_date: str = ""
     raw_text: str = ""
     confidence: float = 0.0
+
+
+def titleize_candidate(value: str) -> str:
+    text = re.sub(r"[_\-]+", " ", value).strip()
+    return " ".join(part.capitalize() for part in text.split())
 
 
 def normalize_text(value: str) -> str:
@@ -184,6 +194,16 @@ def parse_date(value: str) -> str:
         except ValueError:
             continue
     return ""
+
+
+def adjust_to_business_day(value: str) -> str:
+    parsed = parse_date(value)
+    if not parsed:
+        return ""
+    dt = datetime.strptime(parsed, "%d/%m/%Y")
+    while dt.weekday() >= 5:
+        dt += timedelta(days=1)
+    return dt.strftime("%d/%m/%Y")
 
 
 def sniff_delimiter(sample: str) -> str:
@@ -536,6 +556,237 @@ def parse_rows(rows: list[list[str]], source_file: str, source_type: str) -> tup
     return parsed, diagnostics
 
 
+def iter_reference_files() -> list[Path]:
+    available = [path for path in REFERENCE_FILE_CANDIDATES if path.exists()]
+    downloads_dir = Path("/Users/lmv/Downloads")
+    if downloads_dir.exists():
+        for path in sorted(downloads_dir.glob("*atual*.xlsx")):
+            if path not in available:
+                available.append(path)
+    return available
+
+
+def derive_card_candidates_from_filename(path: Path) -> list[str]:
+    stem = normalize_text(path.stem)
+    candidates: list[str] = []
+    raw_stem = path.stem
+    lowered_raw = normalize_text(raw_stem)
+    for marker in ["cartao credito atual", "cartao de credito atual"]:
+        position = lowered_raw.find(marker)
+        if position >= 0:
+            prefix = raw_stem[:position].strip(" -_")
+            titleized = titleize_candidate(prefix)
+            if titleized:
+                candidates.append(titleized)
+    if not candidates and "picpay" in stem:
+        candidates.append("Pic Pay")
+    return candidates
+
+
+def build_reference_data() -> dict[str, list[str]]:
+    accounts: set[str] = set()
+    cards: set[str] = set()
+    observations: set[str] = set()
+    descriptions: set[str] = set()
+    categories: set[str] = set()
+    subcategories: set[str] = set()
+
+    for path in iter_reference_files():
+        records, _ = parse_file(path, path.name)
+        for record in records:
+            if record.account:
+                accounts.add(record.account)
+            if record.card:
+                cards.add(record.card)
+            if record.observations:
+                observations.add(record.observations)
+            if record.description:
+                descriptions.add(record.description)
+            if record.category:
+                categories.add(record.category)
+            if record.subcategory:
+                subcategories.add(record.subcategory)
+        for candidate in derive_card_candidates_from_filename(path):
+            cards.add(candidate)
+            accounts.add(candidate)
+    cards.update(accounts)
+
+    for override in load_overrides():
+        if override.get("account"):
+            accounts.add(str(override["account"]).strip())
+        if override.get("card"):
+            cards.add(str(override["card"]).strip())
+        if override.get("observations"):
+            observations.add(str(override["observations"]).strip())
+        if override.get("description"):
+            descriptions.add(str(override["description"]).strip())
+        if override.get("category"):
+            categories.add(str(override["category"]).strip())
+        if override.get("subcategory"):
+            subcategories.add(str(override["subcategory"]).strip())
+
+    return {
+        "accounts": sorted(accounts),
+        "cards": sorted(cards),
+        "observations": sorted(observations),
+        "descriptions": sorted(descriptions),
+        "categories": sorted(categories),
+        "subcategories": sorted(subcategories),
+        "reference_files": [path.name for path in iter_reference_files()],
+    }
+
+
+def normalize_signature_text(value: str) -> str:
+    token = normalize_text(value)
+    token = re.sub(r"[^a-z0-9\s]", " ", token)
+    token = re.sub(r"\s+", " ", token).strip()
+    return token
+
+
+def load_overrides() -> list[dict[str, str]]:
+    if not OVERRIDES_FILE.exists():
+        return []
+    try:
+        payload = json.loads(OVERRIDES_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    if not isinstance(payload, list):
+        return []
+    overrides: list[dict[str, str]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        overrides.append({str(key): str(value) for key, value in item.items()})
+    return overrides
+
+
+def save_overrides(overrides: list[dict[str, str]]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    OVERRIDES_FILE.write_text(
+        json.dumps(overrides, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def build_override_payload(record: dict[str, object]) -> dict[str, str]:
+    raw_text = str(record.get("raw_text", "")).strip()
+    description = clean_description(str(record.get("description", "")).strip())
+    match_text = raw_text or description
+    return {
+        "id": str(record.get("override_id", "")).strip() or normalize_signature_text(match_text)[:80],
+        "match_text": match_text,
+        "description": description,
+        "category": str(record.get("category", "")).strip(),
+        "subcategory": str(record.get("subcategory", "")).strip(),
+        "account": str(record.get("account", "")).strip(),
+        "card": str(record.get("card", "")).strip(),
+        "observations": str(record.get("observations", "")).strip(),
+        "entry_type": str(record.get("entry_type", "account")).strip() or "account",
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+def apply_overrides_to_record(record: ParsedRecord, overrides: list[dict[str, str]]) -> dict[str, object] | None:
+    best_override: dict[str, str] | None = None
+    best_score = 0.0
+    candidates = [record.raw_text, record.description]
+    for override in overrides:
+        match_text = override.get("match_text", "")
+        if not match_text:
+            continue
+        score = max(description_similarity(match_text, candidate) for candidate in candidates if candidate)
+        if score > best_score:
+            best_score = score
+            best_override = override
+    if not best_override or best_score < 0.62:
+        return None
+
+    if best_override.get("description"):
+        record.description = clean_description(best_override["description"])
+    if best_override.get("category"):
+        record.category = best_override["category"]
+    if best_override.get("subcategory"):
+        record.subcategory = best_override["subcategory"]
+    if best_override.get("account"):
+        record.account = best_override["account"]
+    if best_override.get("card"):
+        record.card = best_override["card"]
+    if best_override.get("observations"):
+        record.observations = best_override["observations"]
+    return {
+        "id": best_override.get("id", ""),
+        "match_text": best_override.get("match_text", ""),
+        "score": round(best_score, 2),
+    }
+
+
+def description_similarity(left: str, right: str) -> float:
+    a = normalize_signature_text(left)
+    b = normalize_signature_text(right)
+    if not a or not b:
+        return 0.0
+    if a == b:
+        return 1.0
+    a_tokens = set(a.split())
+    b_tokens = set(b.split())
+    intersection = len(a_tokens & b_tokens)
+    union = len(a_tokens | b_tokens) or 1
+    overlap = intersection / union
+    if a in b or b in a:
+        overlap = max(overlap, min(len(a), len(b)) / max(len(a), len(b)))
+    return overlap
+
+
+def build_reference_records() -> list[dict[str, str]]:
+    reference_records: list[dict[str, str]] = []
+    for path in iter_reference_files():
+        records, _ = parse_file(path, path.name)
+        inferred_cards = derive_card_candidates_from_filename(path)
+        inferred_card = inferred_cards[0] if inferred_cards else ""
+        for record in records:
+            reference_records.append(
+                {
+                    "source_file": path.name,
+                    "description": record.description,
+                    "amount": format_amount(record.amount),
+                    "due_date": record.due_date,
+                    "account": record.account,
+                    "card": record.card or inferred_card,
+                    "category": record.category,
+                    "subcategory": record.subcategory,
+                }
+            )
+    return reference_records
+
+
+def detect_duplicate(record: ParsedRecord, reference_records: list[dict[str, str]]) -> dict[str, object] | None:
+    current_amount = format_amount(record.amount)
+    current_date = record.due_date
+    best_match: dict[str, object] | None = None
+    best_score = 0.0
+    for candidate in reference_records:
+        if current_amount != candidate["amount"]:
+            continue
+        similarity = description_similarity(record.description, candidate["description"])
+        if similarity < 0.55:
+            continue
+        score = similarity
+        if current_date and candidate["due_date"] == current_date:
+            score += 0.45
+        if score > best_score:
+            best_score = score
+            best_match = {
+                "description": candidate["description"],
+                "amount": candidate["amount"],
+                "due_date": candidate["due_date"],
+                "account": candidate["account"],
+                "card": candidate["card"],
+                "source_file": candidate["source_file"],
+                "score": round(score, 2),
+            }
+    return best_match if best_match and best_score >= 1.0 else None
+
+
 def parse_csv_text(text: str) -> list[list[str]]:
     sample = "\n".join(text.splitlines()[:5])
     delimiter = sniff_delimiter(sample)
@@ -645,7 +896,7 @@ def parse_file(path: Path, original_name: str) -> tuple[list[ParsedRecord], list
     if extension in {".png", ".jpg", ".jpeg", ".heic", ".pdf"}:
         ocr_output = run_ocr(path)
         lines = [line.strip() for line in ocr_output.splitlines() if line.strip()]
-        reference_date = datetime.fromtimestamp(path.stat().st_mtime)
+        reference_date = datetime.now()
         records = parse_ocr_statement_lines(lines, original_name, reference_date)
         if not records:
             for line in lines:
@@ -666,7 +917,7 @@ def encode_csv(records: Iterable[dict]) -> str:
     for item in records:
         description = clean_description(str(item.get("description", "")))
         amount = format_amount(str(item.get("amount", "")))
-        due_date = parse_date(str(item.get("due_date", "")))
+        due_date = adjust_to_business_day(str(item.get("due_date", "")))
         entry_type = str(item.get("entry_type", "account")).strip() or "account"
         if not description or not amount or not due_date:
             continue
@@ -724,6 +975,12 @@ class AppHandler(BaseHTTPRequestHandler):
         if parsed.path in {"/", "/index.html"}:
             self.serve_file(INDEX_FILE)
             return
+        if parsed.path == "/api/reference":
+            self.send_json(build_reference_data())
+            return
+        if parsed.path == "/api/overrides":
+            self.send_json({"overrides": load_overrides()})
+            return
         if parsed.path.startswith("/static/"):
             target = STATIC_DIR / parsed.path.removeprefix("/static/")
             self.serve_file(target)
@@ -734,6 +991,9 @@ class AppHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/process":
             self.handle_process()
+            return
+        if parsed.path == "/api/overrides":
+            self.handle_override_save()
             return
         if parsed.path == "/api/export":
             self.handle_export()
@@ -789,13 +1049,59 @@ class AppHandler(BaseHTTPRequestHandler):
                 records.extend(file_records)
                 diagnostics.extend(file_diagnostics)
 
+        reference_records = build_reference_records()
+        overrides = load_overrides()
+        enriched_records: list[dict[str, object]] = []
+        duplicate_count = 0
+        learned_count = 0
+        for record in records:
+            applied_override = apply_overrides_to_record(record, overrides)
+            payload = asdict(record)
+            duplicate_match = detect_duplicate(record, reference_records)
+            payload["duplicate"] = duplicate_match is not None
+            payload["duplicate_match"] = duplicate_match
+            payload["applied_override"] = applied_override
+            if duplicate_match:
+                duplicate_count += 1
+            if applied_override:
+                learned_count += 1
+            enriched_records.append(payload)
+        if duplicate_count:
+            diagnostics.append(f"{duplicate_count} lançamento(s) parecem já estar cadastrados no extrato atual.")
+        if learned_count:
+            diagnostics.append(f"{learned_count} lançamento(s) receberam override salvo automaticamente.")
+
         self.send_json(
             {
-                "records": [asdict(record) for record in records],
+                "records": enriched_records,
                 "diagnostics": diagnostics,
                 "count": len(records),
             }
         )
+
+    def handle_override_save(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        payload = self.rfile.read(length)
+        try:
+            parsed = json.loads(payload.decode("utf-8"))
+            record = parsed.get("record", {})
+        except json.JSONDecodeError:
+            self.send_json({"error": "JSON invalido."}, HTTPStatus.BAD_REQUEST)
+            return
+        if not isinstance(record, dict):
+            self.send_json({"error": "Override invalido."}, HTTPStatus.BAD_REQUEST)
+            return
+
+        override_payload = build_override_payload(record)
+        if not override_payload["match_text"] or not override_payload["description"]:
+            self.send_json({"error": "Preencha ao menos texto base e descricao antes de salvar o override."}, HTTPStatus.BAD_REQUEST)
+            return
+
+        overrides = load_overrides()
+        overrides = [item for item in overrides if item.get("id") != override_payload["id"]]
+        overrides.insert(0, override_payload)
+        save_overrides(overrides)
+        self.send_json({"ok": True, "override": override_payload, "overrides": overrides})
 
     def handle_export(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))
