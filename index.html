@@ -52,11 +52,17 @@
         <div class="mode-switch">
           <label class="mode-option">
             <input type="radio" name="entryType" value="account" checked />
-            <span>Despesa normal na conta</span>
+            <span class="mode-copy">
+              <strong>Despesa normal na conta</strong>
+              <small>Lançamentos direto na conta, sem cartão vinculado.</small>
+            </span>
           </label>
           <label class="mode-option">
             <input type="radio" name="entryType" value="credit_card" />
-            <span>Cartão de crédito</span>
+            <span class="mode-copy">
+              <strong>Cartão de crédito</strong>
+              <small>Usa vencimento da fatura e mantém o cartão no CSV final.</small>
+            </span>
           </label>
         </div>
         <div class="defaults-grid">
