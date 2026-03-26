@@ -12,6 +12,8 @@ import sys
 import tempfile
 import unicodedata
 import zipfile
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
 from email.parser import BytesParser
@@ -1036,18 +1038,33 @@ class AppHandler(BaseHTTPRequestHandler):
         diagnostics: list[str] = []
         with tempfile.TemporaryDirectory(prefix="integra-mf-") as temp_dir:
             temp_root = Path(temp_dir)
+            temp_files: list[tuple[Path, str]] = []
             for index, file_info in enumerate(files):
                 filename = str(file_info["filename"])
                 safe_name = Path(filename).name
                 temp_path = temp_root / f"{index:02d}-{safe_name}"
                 temp_path.write_bytes(file_info["content"])  # type: ignore[arg-type]
+                temp_files.append((temp_path, safe_name))
+
+            max_workers = min(max(len(temp_files), 1), max((os.cpu_count() or 4) // 2, 4), 8)
+
+            def process_single_file(item: tuple[Path, str]) -> tuple[str, list[ParsedRecord], list[str]]:
+                temp_path, safe_name = item
                 try:
                     file_records, file_diagnostics = parse_file(temp_path, safe_name)
+                    return safe_name, file_records, file_diagnostics
                 except Exception as exc:  # noqa: BLE001
-                    diagnostics.append(f"{safe_name}: erro ao processar ({exc}).")
-                    continue
-                records.extend(file_records)
-                diagnostics.extend(file_diagnostics)
+                    return safe_name, [], [f"{safe_name}: erro ao processar ({exc})."]
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_map = {
+                    executor.submit(process_single_file, item): item[1]
+                    for item in temp_files
+                }
+                for future in as_completed(future_map):
+                    _safe_name, file_records, file_diagnostics = future.result()
+                    records.extend(file_records)
+                    diagnostics.extend(file_diagnostics)
 
         reference_records = build_reference_records()
         overrides = load_overrides()

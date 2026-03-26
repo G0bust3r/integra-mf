@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Integra MF</title>
-    <link rel="stylesheet" href="./static/styles.css?v=18" />
+    <link rel="stylesheet" href="./static/styles.css?v=20" />
   </head>
   <body>
     <main class="page">
@@ -95,12 +95,16 @@
           </label>
           <div class="actions">
             <button id="processBtn" class="primary">Ler arquivos</button>
+            <button id="stopBtn" class="secondary" type="button">Parar</button>
             <button id="clearBtn" class="ghost" type="button">Limpar</button>
           </div>
           <div id="progressPanel" class="progress-panel" hidden>
             <div class="progress-copy">
               <strong id="progressTitle">Preparando leitura</strong>
-              <span id="progressPercent">0%</span>
+              <div class="progress-stats">
+                <span id="progressPercent">0%</span>
+                <span id="progressTimer">00:00</span>
+              </div>
             </div>
             <div class="progress-track">
               <div id="progressBar" class="progress-bar"></div>
@@ -217,6 +221,6 @@
       </article>
     </template>
 
-    <script src="./static/app.js?v=18"></script>
+    <script src="./static/app.js?v=20"></script>
   </body>
 </html>

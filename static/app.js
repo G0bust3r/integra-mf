@@ -25,9 +25,11 @@ const els = {
   progressPanel: document.getElementById("progressPanel"),
   progressTitle: document.getElementById("progressTitle"),
   progressPercent: document.getElementById("progressPercent"),
+  progressTimer: document.getElementById("progressTimer"),
   progressBar: document.getElementById("progressBar"),
   progressDetail: document.getElementById("progressDetail"),
   processBtn: document.getElementById("processBtn"),
+  stopBtn: document.getElementById("stopBtn"),
   applyDefaultsBtn: document.getElementById("applyDefaultsBtn"),
   clearBtn: document.getElementById("clearBtn"),
   exportBtn: document.getElementById("exportBtn"),
@@ -50,6 +52,11 @@ const THEME_KEY = "integra-mf-theme";
 const STORAGE_KEY = "integra-mf-ui-state";
 const FILE_DB_NAME = "integra-mf-files";
 const FILE_STORE = "uploads";
+let progressTimerHandle = null;
+let progressStartedAt = 0;
+let currentRequest = null;
+let autoResumeTriggered = false;
+
 const LOGO_VERSION = "v2";
 const ACCOUNT_OPTIONS = [
   { id: "picpay_account", name: "Pic Pay", type: "Conta Corrente", accent: "#4ade80", summary: "Conta principal", accountValue: "Pic Pay", logo: `./static/logos/picpay.svg?${LOGO_VERSION}` },
@@ -141,6 +148,7 @@ function saveUiState() {
     selectedCardId: state.selectedCardId,
     defaultObservation: els.defaultObservation.value,
     entryType: getSelectedEntryType(),
+    isProcessing: Boolean(currentRequest || state.progress.active),
     savedAt: Date.now(),
   };
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -250,11 +258,33 @@ function setProgress(percent, title, detail) {
 }
 
 function hideProgress() {
+  if (progressTimerHandle) {
+    window.clearInterval(progressTimerHandle);
+    progressTimerHandle = null;
+  }
   if (els.progressPanel) {
     els.progressPanel.hidden = true;
     els.progressBar.style.width = "0%";
+    if (els.progressTimer) els.progressTimer.textContent = "00:00";
   }
   state.progress.active = false;
+  currentRequest = null;
+  if (window.localStorage.getItem(STORAGE_KEY)) {
+    saveUiState();
+  }
+}
+
+function startProgressTimer() {
+  progressStartedAt = Date.now();
+  if (progressTimerHandle) window.clearInterval(progressTimerHandle);
+  const update = () => {
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - progressStartedAt) / 1000));
+    const minutes = String(Math.floor(elapsedSeconds / 60)).padStart(2, "0");
+    const seconds = String(elapsedSeconds % 60).padStart(2, "0");
+    if (els.progressTimer) els.progressTimer.textContent = `${minutes}:${seconds}`;
+  };
+  update();
+  progressTimerHandle = window.setInterval(update, 1000);
 }
 
 function normalizeText(value) {
@@ -623,42 +653,73 @@ async function processFiles() {
     renderDiagnostics(["Selecione ao menos um arquivo antes de processar."]);
     return;
   }
+  if (currentRequest) {
+    renderDiagnostics(["Já existe uma leitura em andamento."]);
+    return;
+  }
 
   const formData = new FormData();
   state.files.forEach((file) => formData.append("files", file));
   renderDiagnostics(["Processando arquivos..."]);
   setProgress(4, "Preparando leitura", "Organizando arquivos para leitura.");
+  startProgressTimer();
+  saveUiState();
 
-  const payload = await new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/process");
-    xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable) return;
-      const percent = (event.loaded / event.total) * 72;
-      setProgress(percent, "Enviando arquivos", "Fazendo upload dos prints e extratos.");
-    };
-    xhr.onreadystatechange = () => {
-      if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED) {
-        setProgress(82, "Lendo arquivos", "OCR e parser estão analisando os anexos.");
-      }
-      if (xhr.readyState === XMLHttpRequest.LOADING) {
-        setProgress(92, "Finalizando leitura", "Organizando os lançamentos entendidos.");
-      }
-    };
-    xhr.onload = () => {
-      try {
-        resolve({
-          ok: xhr.status >= 200 && xhr.status < 300,
-          status: xhr.status,
-          json: JSON.parse(xhr.responseText || "{}"),
-        });
-      } catch (error) {
-        reject(error);
-      }
-    };
-    xhr.onerror = () => reject(new Error("Falha de rede ao processar arquivos."));
-    xhr.send(formData);
-  });
+  let payload;
+  try {
+    payload = await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      currentRequest = xhr;
+      let simulatedPercent = 4;
+      let receivedHeaders = false;
+      const progressFallback = window.setInterval(() => {
+        if (receivedHeaders) return;
+        simulatedPercent = Math.min(simulatedPercent + 4, 74);
+        setProgress(simulatedPercent, "Enviando arquivos", "Subindo os arquivos e preparando o OCR.");
+      }, 500);
+      xhr.open("POST", "/api/process");
+      xhr.upload.onprogress = (event) => {
+        if (!event.lengthComputable) return;
+        const percent = (event.loaded / event.total) * 72;
+        setProgress(percent, "Enviando arquivos", "Fazendo upload dos prints e extratos.");
+      };
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED) {
+          receivedHeaders = true;
+          window.clearInterval(progressFallback);
+          setProgress(82, "Lendo arquivos", "OCR e parser estão analisando os anexos.");
+        }
+        if (xhr.readyState === XMLHttpRequest.LOADING) {
+          setProgress(92, "Finalizando leitura", "Organizando os lançamentos entendidos.");
+        }
+      };
+      xhr.onload = () => {
+        window.clearInterval(progressFallback);
+        try {
+          resolve({
+            ok: xhr.status >= 200 && xhr.status < 300,
+            status: xhr.status,
+            json: JSON.parse(xhr.responseText || "{}"),
+          });
+        } catch (error) {
+          reject(error);
+        }
+      };
+      xhr.onerror = () => {
+        window.clearInterval(progressFallback);
+        reject(new Error("Falha de rede ao processar arquivos."));
+      };
+      xhr.onabort = () => {
+        window.clearInterval(progressFallback);
+        reject(new Error("Leitura interrompida pelo usuário."));
+      };
+      xhr.send(formData);
+    });
+  } catch (error) {
+    hideProgress();
+    renderDiagnostics([error.message || "Falha ao processar os arquivos."]);
+    return;
+  }
 
   const response = { ok: payload.ok, status: payload.status };
   const body = payload.json;
@@ -696,6 +757,28 @@ async function processFiles() {
   setProgress(100, "Leitura concluída", "Os lançamentos já estão prontos para revisão.");
   saveUiState();
   window.setTimeout(() => hideProgress(), 900);
+}
+
+async function stopProcessing({ clearFiles = true } = {}) {
+  if (currentRequest) {
+    currentRequest.abort();
+    currentRequest = null;
+  }
+  hideProgress();
+  renderDiagnostics(["Leitura interrompida."]);
+  if (clearFiles) {
+    state.files = [];
+    state.records = [];
+    state.understood = [];
+    els.filesInput.value = "";
+    renderSelectedFiles();
+    renderEditors();
+    renderUnderstood();
+    window.localStorage.removeItem(STORAGE_KEY);
+    await clearPersistedFiles().catch(() => {});
+  } else {
+    saveUiState();
+  }
 }
 
 async function loadOverrides() {
@@ -784,6 +867,9 @@ els.filesInput.addEventListener("change", (event) => {
   saveUiState();
 });
 els.processBtn.addEventListener("click", processFiles);
+els.stopBtn.addEventListener("click", () => {
+  stopProcessing({ clearFiles: true });
+});
 els.applyDefaultsBtn.addEventListener("click", applyDefaults);
 els.entryTypes.forEach((input) => input.addEventListener("change", () => {
   renderWalletPicker();
@@ -794,17 +880,8 @@ els.defaultObservation.addEventListener("input", () => {
   saveUiState();
 });
 els.clearBtn.addEventListener("click", () => {
-  state.files = [];
-  state.records = [];
-  state.understood = [];
-  els.filesInput.value = "";
-  renderSelectedFiles();
-  renderEditors();
-  renderUnderstood();
+  stopProcessing({ clearFiles: true });
   renderDiagnostics([]);
-  hideProgress();
-  window.localStorage.removeItem(STORAGE_KEY);
-  clearPersistedFiles().catch(() => {});
 });
 els.exportBtn.addEventListener("click", exportCsv);
 if (els.themeToggle) {
@@ -821,6 +898,19 @@ restoreUiState();
 restoreFiles().then((files) => {
   state.files = files;
   renderSelectedFiles();
+  const raw = window.localStorage.getItem(STORAGE_KEY);
+  if (!autoResumeTriggered && raw) {
+    try {
+      const saved = JSON.parse(raw);
+      if (saved.isProcessing && files.length) {
+        autoResumeTriggered = true;
+        renderDiagnostics(["Retomando a leitura dos arquivos após recarregar a página..."]);
+        processFiles();
+      }
+    } catch (_error) {
+      // noop
+    }
+  }
 }).catch(() => {});
 renderWalletPicker();
 renderEditors();
