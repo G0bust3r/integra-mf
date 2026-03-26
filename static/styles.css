@@ -276,6 +276,23 @@ h2 {
   gap: 14px;
 }
 
+.wallet-picker.watch-mode {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  scroll-snap-type: x proximity;
+}
+
+.wallet-picker.watch-mode::-webkit-scrollbar {
+  height: 10px;
+}
+
+.wallet-picker.watch-mode::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+
 .wallet-card {
   position: relative;
   min-height: 196px;
@@ -292,6 +309,36 @@ h2 {
   overflow: hidden;
 }
 
+.wallet-card.credit-watch-card,
+.wallet-card.account-watch-card {
+  flex: 0 0 218px;
+  width: 218px;
+  height: 136px;
+  min-height: 136px;
+  max-height: 136px;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 16px 32px rgba(0, 0, 0, 0.28);
+}
+
+.wallet-card.credit-watch-card {
+  background:
+    radial-gradient(circle at 14% 18%, rgba(255, 255, 255, 0.16) 0%, transparent 22%),
+    linear-gradient(135deg, color-mix(in srgb, var(--wallet-color, var(--brand)) 92%, black 8%), color-mix(in srgb, var(--wallet-color, var(--brand)) 52%, #111 48%));
+}
+
+.wallet-card.account-watch-card {
+  background:
+    radial-gradient(circle at 14% 18%, rgba(255, 255, 255, 0.16) 0%, transparent 22%),
+    linear-gradient(135deg, color-mix(in srgb, var(--wallet-color, var(--brand)) 90%, black 10%), color-mix(in srgb, var(--wallet-color, var(--brand)) 54%, #111 46%));
+}
+
 .wallet-card:hover {
   transform: translateY(-2px);
 }
@@ -299,6 +346,38 @@ h2 {
 .wallet-card.selected {
   border-color: color-mix(in srgb, var(--wallet-color, var(--brand)) 70%, white 30%);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--wallet-color, var(--brand)) 40%, transparent), var(--shadow);
+}
+
+.wallet-card.credit-watch-card.selected,
+.wallet-card.account-watch-card.selected {
+  transform: translateY(-2px) scale(1.015);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 0 0 2px rgba(255, 255, 255, 0.18),
+    0 16px 32px rgba(0, 0, 0, 0.32);
+}
+
+.watch-select-flag {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 2;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.26);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(8px);
+}
+
+.wallet-card.credit-watch-card.selected .watch-select-flag,
+.wallet-card.account-watch-card.selected .watch-select-flag {
+  background: rgba(255, 255, 255, 0.92);
+  color: #111827;
 }
 
 .wallet-card-header {
@@ -309,18 +388,92 @@ h2 {
   margin-bottom: 20px;
 }
 
-.wallet-icon {
+.wallet-icon-frame {
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--wallet-color, var(--brand)) 22%, white 12%);
-  color: white;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.78)),
+    rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
   flex: 0 0 auto;
+}
+
+.wallet-icon-brand {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+}
+
+.account-corner-logo {
+  display: block;
+  width: 42px;
+  height: 28px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 3px 5px;
+}
+
+.logo-token {
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: transparent;
+  color: color-mix(in srgb, var(--wallet-color, var(--brand)) 88%, black 12%);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.network-mark {
+  position: relative;
+  display: block;
+  width: 42px;
+  height: 28px;
+}
+
+.network-logo {
+  display: block;
+  width: 42px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.network-mark.mini {
+  width: 30px;
+  height: 20px;
+}
+
+.network-dot {
+  position: absolute;
+  top: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  opacity: 0.98;
+}
+
+.network-dot.left {
+  left: 0;
+  background: #ef4444;
+}
+
+.network-dot.right {
+  right: 0;
+  background: #f59e0b;
+  mix-blend-mode: screen;
+}
+
+.network-mark.mini .network-dot {
+  width: 20px;
+  height: 20px;
 }
 
 .wallet-brand {
@@ -341,11 +494,103 @@ h2 {
 }
 
 .wallet-number {
-  margin-bottom: 18px;
-  font-size: 20px;
+  margin-bottom: 6px;
+  font-size: 22px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.02em;
   color: var(--text);
+}
+
+.wallet-subnumber {
+  margin-bottom: 18px;
+  color: color-mix(in srgb, var(--text) 78%, var(--muted) 22%);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.watch-card-topline {
+  width: 38px;
+  height: 5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #a3e635, #86efac);
+  margin-bottom: 9px;
+  opacity: 0.95;
+}
+
+.watch-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 22px;
+  min-height: 36px;
+}
+
+.watch-card-brand strong {
+  display: block;
+  font-size: 18px;
+  line-height: 0.95;
+  color: #fff;
+  font-weight: 800;
+  max-width: 110px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.watch-card-brand span {
+  display: block;
+  margin-top: 7px;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 110px;
+}
+
+.watch-network {
+  flex: 0 0 auto;
+  opacity: 0.95;
+  width: 42px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.watch-card-number {
+  margin-top: auto;
+  margin-bottom: 8px;
+  color: #fff;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 24px;
+}
+
+.watch-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  min-height: 20px;
+}
+
+.watch-card-foot span {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .wallet-chip {

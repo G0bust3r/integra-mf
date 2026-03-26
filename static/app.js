@@ -36,29 +36,36 @@ const els = {
 };
 
 const THEME_KEY = "integra-mf-theme";
+const LOGO_VERSION = "v2";
 const ACCOUNT_OPTIONS = [
-  { id: "picpay_account", name: "Pic Pay", type: "Conta Corrente", accent: "#4ade80", summary: "Conta principal", accountValue: "Pic Pay" },
-  { id: "inter_account", name: "Banco Inter", type: "Conta Corrente", accent: "#fb923c", summary: "Conta Corrente", accountValue: "Banco Inter" },
-  { id: "inter_pj_account", name: "Banco Inter PJ", type: "Conta Corrente", accent: "#fb923c", summary: "Conta PJ", accountValue: "Banco Inter PJ" },
-  { id: "mercadopago_account", name: "MercadoPago", type: "Conta Corrente", accent: "#60a5fa", summary: "Conta Corrente", accountValue: "MercadoPago" },
-  { id: "votorantim_account", name: "Banco Votorantim", type: "Conta Corrente", accent: "#93c5fd", summary: "Conta Corrente", accountValue: "Banco Votorantim" },
-  { id: "next_account", name: "Next", type: "Conta Corrente", accent: "#22c55e", summary: "Conta Corrente", accountValue: "Next" },
-  { id: "recargapay_account", name: "RecargaPay", type: "Conta Corrente", accent: "#f59e0b", summary: "Conta Corrente", accountValue: "RecargaPay" },
-  { id: "corinthians_account", name: "Corinthians", type: "Conta Corrente", accent: "#f59e0b", summary: "Conta Corrente", accountValue: "Corinthians" },
-  { id: "reserva_account", name: "Reserva de Emergência", type: "Investimentos", accent: "#94a3b8", summary: "Reserva", accountValue: "Reserva de Emergência" },
-  { id: "investimentos_account", name: "Investimentos", type: "Investimentos", accent: "#94a3b8", summary: "Investimentos", accountValue: "Investimentos" },
-  { id: "viagem_account", name: "Viagem", type: "Investimentos", accent: "#c084fc", summary: "Objetivo", accountValue: "Viagem" },
+  { id: "picpay_account", name: "Pic Pay", type: "Conta Corrente", accent: "#4ade80", summary: "Conta principal", accountValue: "Pic Pay", logo: `./static/logos/picpay.svg?${LOGO_VERSION}` },
+  { id: "inter_account", name: "Banco Inter", type: "Conta Corrente", accent: "#fb923c", summary: "Conta Corrente", accountValue: "Banco Inter", logo: `./static/logos/inter.svg?${LOGO_VERSION}` },
+  { id: "inter_pj_account", name: "Banco Inter PJ", type: "Conta Corrente", accent: "#fb923c", summary: "Conta PJ", accountValue: "Banco Inter PJ", logo: `./static/logos/inter.svg?${LOGO_VERSION}` },
+  { id: "mercadopago_account", name: "MercadoPago", type: "Conta Corrente", accent: "#60a5fa", summary: "Conta Corrente", accountValue: "MercadoPago", logo: `./static/logos/mercadopago.svg?${LOGO_VERSION}` },
+  { id: "votorantim_account", name: "Banco Votorantim", type: "Conta Corrente", accent: "#93c5fd", summary: "Conta Corrente", accountValue: "Banco Votorantim", logo: `./static/logos/bv.svg?${LOGO_VERSION}` },
+  { id: "next_account", name: "Next", type: "Conta Corrente", accent: "#22c55e", summary: "Conta Corrente", accountValue: "Next", logo: `./static/logos/next.svg?${LOGO_VERSION}` },
+  { id: "recargapay_account", name: "RecargaPay", type: "Conta Corrente", accent: "#f59e0b", summary: "Conta Corrente", accountValue: "RecargaPay", logo: `./static/logos/recargapay.svg?${LOGO_VERSION}` },
+  { id: "corinthians_account", name: "Corinthians", type: "Conta Corrente", accent: "#f59e0b", summary: "Conta Corrente", accountValue: "Corinthians", logo: `./static/logos/bmg.svg?${LOGO_VERSION}` },
+  { id: "reserva_account", name: "Reserva de Emergência", type: "Investimentos", accent: "#94a3b8", summary: "Reserva", accountValue: "Reserva de Emergência", logo: `./static/logos/picpay.svg?${LOGO_VERSION}` },
+  { id: "investimentos_account", name: "Investimentos", type: "Investimentos", accent: "#94a3b8", summary: "Investimentos", accountValue: "Investimentos", logo: `./static/logos/picpay.svg?${LOGO_VERSION}` },
+  { id: "viagem_account", name: "Viagem", type: "Investimentos", accent: "#c084fc", summary: "Objetivo", accountValue: "Viagem", logo: `./static/logos/picpay.svg?${LOGO_VERSION}` },
 ];
 const CREDIT_CARD_OPTIONS = [
-  { id: "picpay_0037", name: "Pic Pay", brand: "Pic Pay", last4: "0037", accountValue: "Pic Pay", accent: "#4ade80", closingDay: 5, dueDay: 13 },
-  { id: "inter_7449", name: "Inter", brand: "Inter", last4: "7449", accountValue: "Pic Pay", accent: "#fb923c", closingDay: 30, dueDay: 9 },
-  { id: "bv_3367", name: "Banco BV", brand: "Banco BV", last4: "3367", accountValue: "Pic Pay", accent: "#60a5fa", closingDay: 5, dueDay: 13 },
-  { id: "next_3208", name: "Next", brand: "Next", last4: "3208", accountValue: "Next", accent: "#22c55e", closingDay: 27, dueDay: 10 },
-  { id: "recargapay_2099", name: "RecargaPay", brand: "RecargaPay", last4: "2099", accountValue: "RecargaPay", accent: "#f59e0b", closingDay: 1, dueDay: 1 },
-  { id: "bmg_3388", name: "BMG Multi", brand: "BMG Multi", last4: "3388", accountValue: "Corinthians", accent: "#f59e0b", closingDay: 6, dueDay: 15 },
+  { id: "picpay_0037", name: "Pic Pay", brand: "Pic Pay", last4: "0037", accountValue: "Pic Pay", accent: "#4ade80", closingDay: 5, dueDay: 13, logo: `./static/logos/picpay.svg?${LOGO_VERSION}`, networkLogo: `./static/logos/mastercard.svg?${LOGO_VERSION}` },
+  { id: "inter_7449", name: "Inter", brand: "Inter", last4: "7449", accountValue: "Pic Pay", accent: "#fb923c", closingDay: 30, dueDay: 9, logo: `./static/logos/inter.svg?${LOGO_VERSION}`, networkLogo: `./static/logos/mastercard.svg?${LOGO_VERSION}` },
+  { id: "bv_3367", name: "Banco BV", brand: "Banco BV", last4: "3367", accountValue: "Pic Pay", accent: "#60a5fa", closingDay: 5, dueDay: 13, logo: `./static/logos/bv.svg?${LOGO_VERSION}`, networkLogo: `./static/logos/mastercard.svg?${LOGO_VERSION}` },
+  { id: "next_3208", name: "Next", brand: "Next", last4: "3208", accountValue: "Next", accent: "#22c55e", closingDay: 27, dueDay: 10, logo: `./static/logos/next.svg?${LOGO_VERSION}`, networkLogo: `./static/logos/mastercard.svg?${LOGO_VERSION}` },
+  { id: "recargapay_2099", name: "RecargaPay", brand: "RecargaPay", last4: "2099", accountValue: "RecargaPay", accent: "#f59e0b", closingDay: 1, dueDay: 1, logo: `./static/logos/recargapay.svg?${LOGO_VERSION}`, networkLogo: `./static/logos/mastercard.svg?${LOGO_VERSION}` },
+  { id: "bmg_3388", name: "BMG Multi", brand: "BMG Multi", last4: "3388", accountValue: "Corinthians", accent: "#f59e0b", closingDay: 6, dueDay: 15, logo: `./static/logos/bmg.svg?${LOGO_VERSION}`, networkLogo: `./static/logos/mastercard.svg?${LOGO_VERSION}` },
 ];
 
 function getBrandMark(item, entryType) {
+  if (item.networkLogo) {
+    return `<img class="network-logo" src="${escapeHtml(item.networkLogo)}" alt="Bandeira do cartão" />`;
+  }
+  if (item.logo) {
+    return `<img class="network-logo" src="${escapeHtml(item.logo)}" alt="Logo ${escapeHtml(item.name || item.brand || "cartão")}" />`;
+  }
   const key = normalizeText(item.brand || item.name);
   if (entryType === "credit_card") {
     return `
@@ -86,10 +93,22 @@ function getBrandMark(item, entryType) {
 }
 
 function getWalletIcon(item, entryType) {
+  if (item.logo) {
+    return `<img class="account-corner-logo" src="${escapeHtml(item.logo)}" alt="Logo ${escapeHtml(item.name || "conta")}" />`;
+  }
   return `
     <div class="wallet-icon-frame">
       <div class="wallet-icon-brand">${getBrandMark(item, entryType)}</div>
     </div>
+  `;
+}
+
+function getMiniNetworkMark() {
+  return `
+    <span class="network-mark mini">
+      <span class="network-dot left"></span>
+      <span class="network-dot right"></span>
+    </span>
   `;
 }
 
@@ -160,6 +179,7 @@ function getWalletChoices() {
 function renderWalletPicker() {
   const entryType = getSelectedEntryType();
   const items = getWalletChoices();
+  els.walletPicker.className = "wallet-picker watch-mode";
   els.selectionTitle.textContent = entryType === "credit_card" ? "Selecione o cartão cadastrado" : "Selecione a conta cadastrada";
   els.selectionSubtitle.textContent = entryType === "credit_card"
     ? "O app usa a conta vinculada, mantém a data da despesa como lançamento e calcula o vencimento da fatura em dia útil."
@@ -171,44 +191,30 @@ function renderWalletPicker() {
   els.walletPicker.innerHTML = items
     .map((item) => {
       const selected = entryType === "credit_card" ? item.id === state.selectedCardId : item.id === state.selectedAccountId;
-      const meta = entryType === "credit_card"
-        ? `
-          <div><strong>Conta</strong><span>${escapeHtml(item.accountValue)}</span></div>
-          <div><strong>Final</strong><span>${escapeHtml(item.last4)}</span></div>
-          <div><strong>Fechamento</strong><span>${String(item.closingDay).padStart(2, "0")}</span></div>
-          <div><strong>Vencimento</strong><span>${String(item.dueDay).padStart(2, "0")}</span></div>
-        `
-        : `
-          <div><strong>Tipo</strong><span>${escapeHtml(item.type)}</span></div>
-          <div><strong>Conta</strong><span>${escapeHtml(item.accountValue)}</span></div>
-          <div><strong>Visual</strong><span>${escapeHtml(item.summary)}</span></div>
-          <div><strong>Status</strong><span>Disponível</span></div>
-        `;
       return `
         <button
           type="button"
-          class="wallet-card ${selected ? "selected" : ""}"
+          class="wallet-card ${entryType === "credit_card" ? "credit-watch-card" : "account-watch-card"} ${selected ? "selected" : ""}"
           data-wallet-id="${escapeHtml(item.id)}"
           style="--wallet-color:${escapeHtml(item.accent)}"
         >
-          <div class="wallet-card-header">
-            ${getWalletIcon(item, entryType)}
-            <div class="wallet-brand">
+          <div class="watch-select-flag">${selected ? "Selecionado" : entryType === "credit_card" ? "Cartão" : "Conta"}</div>
+          <div class="watch-card-topline"></div>
+          <div class="watch-card-head">
+            <div class="watch-card-brand">
               <strong>${escapeHtml(item.name)}</strong>
-              <span>${entryType === "credit_card" ? `${escapeHtml(item.brand)} • ${escapeHtml(item.last4)}` : escapeHtml(item.type)}</span>
+              <span>${entryType === "credit_card" ? escapeHtml(item.accountValue) : escapeHtml(item.type)}</span>
             </div>
-            <div class="wallet-chip">${entryType === "credit_card" ? "CARD" : "ACC"}</div>
+            <div class="watch-network">
+              ${entryType === "credit_card" ? getBrandMark(item, entryType) : getWalletIcon(item, entryType)}
+            </div>
           </div>
-          <div class="wallet-number">
-            ${entryType === "credit_card" ? `Cartão final ${escapeHtml(item.last4)}` : escapeHtml(item.accountValue)}
+          <div class="watch-card-number">
+            ${entryType === "credit_card" ? `•••• ${escapeHtml(item.last4)}` : escapeHtml(item.accountValue)}
           </div>
-          <div class="wallet-subnumber">
-            ${entryType === "credit_card" ? `•••• •••• •••• ${escapeHtml(item.last4)}` : `Conta ativa • ${escapeHtml(item.summary)}`}
-          </div>
-          <div class="wallet-meta">${meta}</div>
-          <div class="wallet-footer">
-            <span>${entryType === "credit_card" ? "Integra MF" : "Conta selecionável"}</span>
-            <span>${entryType === "credit_card" ? "Ajuste automático" : escapeHtml(item.summary)}</span>
+          <div class="watch-card-foot">
+            <span>${entryType === "credit_card" ? `fech. ${String(item.closingDay).padStart(2, "0")}` : escapeHtml(item.summary.toUpperCase())}</span>
+            ${entryType === "credit_card" ? `<span>venc. ${String(item.dueDay).padStart(2, "0")}</span>` : getMiniNetworkMark()}
           </div>
         </button>
       `;
