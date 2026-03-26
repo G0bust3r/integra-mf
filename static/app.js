@@ -3,6 +3,12 @@ const state = {
   records: [],
   understood: [],
   overrides: [],
+  progress: {
+    active: false,
+    percent: 0,
+    title: "Preparando leitura",
+    detail: "Organizando arquivos para leitura.",
+  },
   selectedAccountId: "picpay_account",
   selectedCardId: "picpay_0037",
   reference: {
@@ -16,6 +22,11 @@ const els = {
   filesInput: document.getElementById("files"),
   selectedFiles: document.getElementById("selectedFiles"),
   diagnostics: document.getElementById("diagnostics"),
+  progressPanel: document.getElementById("progressPanel"),
+  progressTitle: document.getElementById("progressTitle"),
+  progressPercent: document.getElementById("progressPercent"),
+  progressBar: document.getElementById("progressBar"),
+  progressDetail: document.getElementById("progressDetail"),
   processBtn: document.getElementById("processBtn"),
   applyDefaultsBtn: document.getElementById("applyDefaultsBtn"),
   clearBtn: document.getElementById("clearBtn"),
@@ -36,6 +47,9 @@ const els = {
 };
 
 const THEME_KEY = "integra-mf-theme";
+const STORAGE_KEY = "integra-mf-ui-state";
+const FILE_DB_NAME = "integra-mf-files";
+const FILE_STORE = "uploads";
 const LOGO_VERSION = "v2";
 const ACCOUNT_OPTIONS = [
   { id: "picpay_account", name: "Pic Pay", type: "Conta Corrente", accent: "#4ade80", summary: "Conta principal", accountValue: "Pic Pay", logo: `./static/logos/picpay.svg?${LOGO_VERSION}` },
@@ -117,6 +131,130 @@ function escapeHtml(value) {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
+}
+
+function saveUiState() {
+  const payload = {
+    records: state.records,
+    understood: state.understood,
+    selectedAccountId: state.selectedAccountId,
+    selectedCardId: state.selectedCardId,
+    defaultObservation: els.defaultObservation.value,
+    entryType: getSelectedEntryType(),
+    savedAt: Date.now(),
+  };
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+}
+
+function restoreUiState() {
+  const raw = window.localStorage.getItem(STORAGE_KEY);
+  if (!raw) return;
+  try {
+    const payload = JSON.parse(raw);
+    state.records = Array.isArray(payload.records) ? payload.records : [];
+    state.understood = Array.isArray(payload.understood) ? payload.understood : [];
+    state.selectedAccountId = payload.selectedAccountId || state.selectedAccountId;
+    state.selectedCardId = payload.selectedCardId || state.selectedCardId;
+    if (typeof payload.defaultObservation === "string") {
+      els.defaultObservation.value = payload.defaultObservation;
+    }
+    if (payload.entryType) {
+      els.entryTypes.forEach((input) => {
+        input.checked = input.value === payload.entryType;
+      });
+    }
+  } catch (_error) {
+    window.localStorage.removeItem(STORAGE_KEY);
+  }
+}
+
+function openFilesDb() {
+  return new Promise((resolve, reject) => {
+    const request = window.indexedDB.open(FILE_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(FILE_STORE)) {
+        db.createObjectStore(FILE_STORE, { keyPath: "id" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function persistFiles(files) {
+  const db = await openFilesDb();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(FILE_STORE, "readwrite");
+    const store = tx.objectStore(FILE_STORE);
+    store.clear();
+    files.forEach((file, index) => {
+      store.put({
+        id: `${index}-${file.name}-${file.size}`,
+        name: file.name,
+        type: file.type,
+        lastModified: file.lastModified,
+        blob: file,
+      });
+    });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+}
+
+async function restoreFiles() {
+  const db = await openFilesDb();
+  const files = await new Promise((resolve, reject) => {
+    const tx = db.transaction(FILE_STORE, "readonly");
+    const store = tx.objectStore(FILE_STORE);
+    const request = store.getAll();
+    request.onsuccess = () => {
+      const restored = (request.result || []).map((item) => new File([item.blob], item.name, {
+        type: item.type || "application/octet-stream",
+        lastModified: item.lastModified || Date.now(),
+      }));
+      resolve(restored);
+    };
+    request.onerror = () => reject(request.error);
+  });
+  db.close();
+  return files;
+}
+
+async function clearPersistedFiles() {
+  const db = await openFilesDb();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(FILE_STORE, "readwrite");
+    tx.objectStore(FILE_STORE).clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+}
+
+function setProgress(percent, title, detail) {
+  state.progress = {
+    active: percent < 100,
+    percent,
+    title,
+    detail,
+  };
+  if (els.progressPanel) {
+    els.progressPanel.hidden = false;
+    els.progressTitle.textContent = title;
+    els.progressPercent.textContent = `${Math.max(0, Math.min(100, Math.round(percent)))}%`;
+    els.progressBar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+    els.progressDetail.textContent = detail;
+  }
+}
+
+function hideProgress() {
+  if (els.progressPanel) {
+    els.progressPanel.hidden = true;
+    els.progressBar.style.width = "0%";
+  }
+  state.progress.active = false;
 }
 
 function normalizeText(value) {
@@ -230,6 +368,7 @@ function renderWalletPicker() {
       }
       renderWalletPicker();
       applyDefaults();
+      saveUiState();
     });
   });
 }
@@ -378,6 +517,7 @@ function applyDefaults() {
   });
 
   renderEditors();
+  saveUiState();
 }
 
 function updateCounters() {
@@ -408,6 +548,7 @@ function onFieldChange(index, field, value) {
     }
   }
   renderEditors();
+  saveUiState();
 }
 
 function renderUnderstood() {
@@ -486,14 +627,44 @@ async function processFiles() {
   const formData = new FormData();
   state.files.forEach((file) => formData.append("files", file));
   renderDiagnostics(["Processando arquivos..."]);
+  setProgress(4, "Preparando leitura", "Organizando arquivos para leitura.");
 
-  const response = await fetch("/api/process", {
-    method: "POST",
-    body: formData,
+  const payload = await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/process");
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      const percent = (event.loaded / event.total) * 72;
+      setProgress(percent, "Enviando arquivos", "Fazendo upload dos prints e extratos.");
+    };
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED) {
+        setProgress(82, "Lendo arquivos", "OCR e parser estão analisando os anexos.");
+      }
+      if (xhr.readyState === XMLHttpRequest.LOADING) {
+        setProgress(92, "Finalizando leitura", "Organizando os lançamentos entendidos.");
+      }
+    };
+    xhr.onload = () => {
+      try {
+        resolve({
+          ok: xhr.status >= 200 && xhr.status < 300,
+          status: xhr.status,
+          json: JSON.parse(xhr.responseText || "{}"),
+        });
+      } catch (error) {
+        reject(error);
+      }
+    };
+    xhr.onerror = () => reject(new Error("Falha de rede ao processar arquivos."));
+    xhr.send(formData);
   });
-  const payload = await response.json();
+
+  const response = { ok: payload.ok, status: payload.status };
+  const body = payload.json;
   if (!response.ok) {
-    renderDiagnostics([payload.error || "Falha ao processar os arquivos."]);
+    hideProgress();
+    renderDiagnostics([body.error || "Falha ao processar os arquivos."]);
     return;
   }
 
@@ -501,7 +672,7 @@ async function processFiles() {
   normalizeDefaultInputs();
   const selectedAccount = getSelectedAccount();
   const selectedCard = getSelectedCard();
-  state.records = (payload.records || []).map((record) => {
+  state.records = (body.records || []).map((record) => {
     const launchDate = record.launch_date || record.due_date || getTodayDate();
     const next = {
       ...record,
@@ -521,7 +692,10 @@ async function processFiles() {
   }));
   applyDefaults();
   renderUnderstood();
-  renderDiagnostics(payload.diagnostics || [`${payload.count || 0} linhas reconhecidas.`]);
+  renderDiagnostics(body.diagnostics || [`${body.count || 0} linhas reconhecidas.`]);
+  setProgress(100, "Leitura concluída", "Os lançamentos já estão prontos para revisão.");
+  saveUiState();
+  window.setTimeout(() => hideProgress(), 900);
 }
 
 async function loadOverrides() {
@@ -606,13 +780,19 @@ async function exportCsv() {
 els.filesInput.addEventListener("change", (event) => {
   state.files = Array.from(event.target.files || []);
   renderSelectedFiles();
+  persistFiles(state.files).catch(() => {});
+  saveUiState();
 });
 els.processBtn.addEventListener("click", processFiles);
 els.applyDefaultsBtn.addEventListener("click", applyDefaults);
 els.entryTypes.forEach((input) => input.addEventListener("change", () => {
   renderWalletPicker();
   applyDefaults();
+  saveUiState();
 }));
+els.defaultObservation.addEventListener("input", () => {
+  saveUiState();
+});
 els.clearBtn.addEventListener("click", () => {
   state.files = [];
   state.records = [];
@@ -622,6 +802,9 @@ els.clearBtn.addEventListener("click", () => {
   renderEditors();
   renderUnderstood();
   renderDiagnostics([]);
+  hideProgress();
+  window.localStorage.removeItem(STORAGE_KEY);
+  clearPersistedFiles().catch(() => {});
 });
 els.exportBtn.addEventListener("click", exportCsv);
 if (els.themeToggle) {
@@ -634,8 +817,12 @@ if (els.themeToggle) {
 initTheme();
 loadReferenceData();
 loadOverrides();
+restoreUiState();
+restoreFiles().then((files) => {
+  state.files = files;
+  renderSelectedFiles();
+}).catch(() => {});
 renderWalletPicker();
-renderSelectedFiles();
 renderEditors();
 renderUnderstood();
 renderOverrides();

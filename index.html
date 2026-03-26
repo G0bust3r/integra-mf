@@ -4,14 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Integra MF</title>
-    <link rel="stylesheet" href="./static/styles.css?v=16" />
+    <link rel="stylesheet" href="./static/styles.css?v=18" />
   </head>
   <body>
     <main class="page">
       <header class="page-header">
         <div class="header-copy">
-          <p class="eyebrow">Integra MF</p>
-          <h1>Transforme prints e extratos em um CSV limpo para importar no Minhas Finanças</h1>
+          <h1>Integra MF</h1>
           <p class="lede">Envie o arquivo, confira o que foi lido e ajuste manualmente só o que precisar.</p>
         </div>
         <div class="header-tools">
@@ -97,6 +96,16 @@
           <div class="actions">
             <button id="processBtn" class="primary">Ler arquivos</button>
             <button id="clearBtn" class="ghost" type="button">Limpar</button>
+          </div>
+          <div id="progressPanel" class="progress-panel" hidden>
+            <div class="progress-copy">
+              <strong id="progressTitle">Preparando leitura</strong>
+              <span id="progressPercent">0%</span>
+            </div>
+            <div class="progress-track">
+              <div id="progressBar" class="progress-bar"></div>
+            </div>
+            <p id="progressDetail" class="progress-detail">Organizando arquivos para leitura.</p>
           </div>
           <ul id="selectedFiles" class="file-list"></ul>
           <div id="diagnostics" class="diagnostics"></div>
@@ -208,6 +217,6 @@
       </article>
     </template>
 
-    <script src="./static/app.js?v=15"></script>
+    <script src="./static/app.js?v=18"></script>
   </body>
 </html>
