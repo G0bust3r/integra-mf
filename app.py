@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import base64
 import io
 import json
 import mimetypes
@@ -24,6 +25,11 @@ from pathlib import Path
 from typing import Iterable
 from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
+
+try:
+    import webview  # type: ignore
+except ImportError:
+    webview = None
 
 
 ROOT = Path(__file__).resolve().parent
@@ -969,6 +975,125 @@ def parse_multipart(content_type: str, payload: bytes) -> tuple[dict[str, str], 
     return fields, files
 
 
+def process_uploaded_files(files: list[dict[str, object]]) -> dict[str, object]:
+    records: list[ParsedRecord] = []
+    diagnostics: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="integra-mf-") as temp_dir:
+        temp_root = Path(temp_dir)
+        temp_files: list[tuple[Path, str]] = []
+        for index, file_info in enumerate(files):
+            filename = str(file_info["filename"])
+            safe_name = Path(filename).name
+            temp_path = temp_root / f"{index:02d}-{safe_name}"
+            temp_path.write_bytes(file_info["content"])  # type: ignore[arg-type]
+            temp_files.append((temp_path, safe_name))
+
+        max_workers = min(max(len(temp_files), 1), max((os.cpu_count() or 4) // 2, 4), 8)
+
+        def process_single_file(item: tuple[Path, str]) -> tuple[str, list[ParsedRecord], list[str]]:
+            temp_path, safe_name = item
+            try:
+                file_records, file_diagnostics = parse_file(temp_path, safe_name)
+                return safe_name, file_records, file_diagnostics
+            except Exception as exc:  # noqa: BLE001
+                return safe_name, [], [f"{safe_name}: erro ao processar ({exc})."]
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {
+                executor.submit(process_single_file, item): item[1]
+                for item in temp_files
+            }
+            for future in as_completed(future_map):
+                _safe_name, file_records, file_diagnostics = future.result()
+                records.extend(file_records)
+                diagnostics.extend(file_diagnostics)
+
+    reference_records = build_reference_records()
+    overrides = load_overrides()
+    enriched_records: list[dict[str, object]] = []
+    duplicate_count = 0
+    learned_count = 0
+    for record in records:
+        applied_override = apply_overrides_to_record(record, overrides)
+        payload = asdict(record)
+        duplicate_match = detect_duplicate(record, reference_records)
+        payload["duplicate"] = duplicate_match is not None
+        payload["duplicate_match"] = duplicate_match
+        payload["applied_override"] = applied_override
+        if duplicate_match:
+            duplicate_count += 1
+        if applied_override:
+            learned_count += 1
+        enriched_records.append(payload)
+    if duplicate_count:
+        diagnostics.append(f"{duplicate_count} lançamento(s) parecem já estar cadastrados no extrato atual.")
+    if learned_count:
+        diagnostics.append(f"{learned_count} lançamento(s) receberam override salvo automaticamente.")
+
+    return {
+        "records": enriched_records,
+        "diagnostics": diagnostics,
+        "count": len(records),
+    }
+
+
+def save_override_record(record: dict[str, object]) -> tuple[dict[str, object], int]:
+    if not isinstance(record, dict):
+        return {"error": "Override invalido."}, HTTPStatus.BAD_REQUEST
+
+    override_payload = build_override_payload(record)
+    if not override_payload["match_text"] or not override_payload["description"]:
+        return {"error": "Preencha ao menos texto base e descricao antes de salvar o override."}, HTTPStatus.BAD_REQUEST
+
+    overrides = load_overrides()
+    overrides = [item for item in overrides if item.get("id") != override_payload["id"]]
+    overrides.insert(0, override_payload)
+    save_overrides(overrides)
+    return {"ok": True, "override": override_payload, "overrides": overrides}, HTTPStatus.OK
+
+
+class DesktopBridge:
+    def get_reference(self) -> dict[str, object]:
+        return build_reference_data()
+
+    def get_overrides(self) -> dict[str, object]:
+        return {"overrides": load_overrides()}
+
+    def save_override(self, payload: dict[str, object]) -> dict[str, object]:
+        result, _status = save_override_record(payload.get("record", {}))  # type: ignore[arg-type]
+        return result
+
+    def process_files(self, payload: dict[str, object]) -> dict[str, object]:
+        raw_files = payload.get("files", [])
+        if not isinstance(raw_files, list):
+            return {"error": "Nenhum arquivo recebido."}
+        files: list[dict[str, object]] = []
+        for item in raw_files:
+            if not isinstance(item, dict):
+                continue
+            try:
+                content = base64.b64decode(str(item.get("content", "")))
+            except Exception:  # noqa: BLE001
+                continue
+            files.append(
+                {
+                    "filename": str(item.get("filename", "arquivo.bin")),
+                    "content": content,
+                }
+            )
+        if not files:
+            return {"error": "Nenhum arquivo recebido."}
+        return process_uploaded_files(files)
+
+    def export_csv(self, payload: dict[str, object]) -> dict[str, object]:
+        records = payload.get("records", [])
+        csv_payload = encode_csv(records).encode("utf-8-sig")
+        return {
+            "filename": f"minhasfinancas-{datetime.now().strftime('%Y%m%d-%H%M%S')}.csv",
+            "content": base64.b64encode(csv_payload).decode("ascii"),
+        }
+
+
 class AppHandler(BaseHTTPRequestHandler):
     server_version = "IntegraMF/0.1"
 
@@ -976,6 +1101,9 @@ class AppHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path in {"/", "/index.html"}:
             self.serve_file(INDEX_FILE)
+            return
+        if parsed.path == "/api/health":
+            self.send_json({"ok": True, "host": HOST, "port": PORT})
             return
         if parsed.path == "/api/reference":
             self.send_json(build_reference_data())
@@ -1034,67 +1162,7 @@ class AppHandler(BaseHTTPRequestHandler):
             self.send_json({"error": "Nenhum arquivo recebido."}, HTTPStatus.BAD_REQUEST)
             return
 
-        records: list[ParsedRecord] = []
-        diagnostics: list[str] = []
-        with tempfile.TemporaryDirectory(prefix="integra-mf-") as temp_dir:
-            temp_root = Path(temp_dir)
-            temp_files: list[tuple[Path, str]] = []
-            for index, file_info in enumerate(files):
-                filename = str(file_info["filename"])
-                safe_name = Path(filename).name
-                temp_path = temp_root / f"{index:02d}-{safe_name}"
-                temp_path.write_bytes(file_info["content"])  # type: ignore[arg-type]
-                temp_files.append((temp_path, safe_name))
-
-            max_workers = min(max(len(temp_files), 1), max((os.cpu_count() or 4) // 2, 4), 8)
-
-            def process_single_file(item: tuple[Path, str]) -> tuple[str, list[ParsedRecord], list[str]]:
-                temp_path, safe_name = item
-                try:
-                    file_records, file_diagnostics = parse_file(temp_path, safe_name)
-                    return safe_name, file_records, file_diagnostics
-                except Exception as exc:  # noqa: BLE001
-                    return safe_name, [], [f"{safe_name}: erro ao processar ({exc})."]
-
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                future_map = {
-                    executor.submit(process_single_file, item): item[1]
-                    for item in temp_files
-                }
-                for future in as_completed(future_map):
-                    _safe_name, file_records, file_diagnostics = future.result()
-                    records.extend(file_records)
-                    diagnostics.extend(file_diagnostics)
-
-        reference_records = build_reference_records()
-        overrides = load_overrides()
-        enriched_records: list[dict[str, object]] = []
-        duplicate_count = 0
-        learned_count = 0
-        for record in records:
-            applied_override = apply_overrides_to_record(record, overrides)
-            payload = asdict(record)
-            duplicate_match = detect_duplicate(record, reference_records)
-            payload["duplicate"] = duplicate_match is not None
-            payload["duplicate_match"] = duplicate_match
-            payload["applied_override"] = applied_override
-            if duplicate_match:
-                duplicate_count += 1
-            if applied_override:
-                learned_count += 1
-            enriched_records.append(payload)
-        if duplicate_count:
-            diagnostics.append(f"{duplicate_count} lançamento(s) parecem já estar cadastrados no extrato atual.")
-        if learned_count:
-            diagnostics.append(f"{learned_count} lançamento(s) receberam override salvo automaticamente.")
-
-        self.send_json(
-            {
-                "records": enriched_records,
-                "diagnostics": diagnostics,
-                "count": len(records),
-            }
-        )
+        self.send_json(process_uploaded_files(files))
 
     def handle_override_save(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))
@@ -1105,20 +1173,8 @@ class AppHandler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             self.send_json({"error": "JSON invalido."}, HTTPStatus.BAD_REQUEST)
             return
-        if not isinstance(record, dict):
-            self.send_json({"error": "Override invalido."}, HTTPStatus.BAD_REQUEST)
-            return
-
-        override_payload = build_override_payload(record)
-        if not override_payload["match_text"] or not override_payload["description"]:
-            self.send_json({"error": "Preencha ao menos texto base e descricao antes de salvar o override."}, HTTPStatus.BAD_REQUEST)
-            return
-
-        overrides = load_overrides()
-        overrides = [item for item in overrides if item.get("id") != override_payload["id"]]
-        overrides.insert(0, override_payload)
-        save_overrides(overrides)
-        self.send_json({"ok": True, "override": override_payload, "overrides": overrides})
+        result, status = save_override_record(record)
+        self.send_json(result, status)
 
     def handle_export(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))
@@ -1141,12 +1197,26 @@ class AppHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    if "--desktop" in sys.argv and webview is not None:
+        window = webview.create_window("Integra MF", INDEX_FILE.as_uri(), js_api=DesktopBridge(), width=1480, height=980)
+        webview.start()
+        return
+
     host = HOST
     port = PORT
-    if len(sys.argv) >= 2:
-        port = int(sys.argv[1])
+    open_browser = "--open" in sys.argv
+    numeric_args = [argument for argument in sys.argv[1:] if argument.isdigit()]
+    if numeric_args:
+        port = int(numeric_args[0])
     server = ThreadingHTTPServer((host, port), AppHandler)
-    print(f"Integra MF em http://{host}:{port}")
+    app_url = f"http://{host}:{port}"
+    print(f"Integra MF em {app_url}")
+    print("Abra esse endereço no navegador para usar o app.")
+    if open_browser and sys.platform == "darwin":
+        try:
+            subprocess.Popen(["open", app_url], cwd=str(ROOT))
+        except OSError:
+            pass
     try:
         server.serve_forever()
     except KeyboardInterrupt:

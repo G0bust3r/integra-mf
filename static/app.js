@@ -80,6 +80,10 @@ const CREDIT_CARD_OPTIONS = [
   { id: "bmg_3388", name: "BMG Multi", brand: "BMG Multi", last4: "3388", accountValue: "Corinthians", accent: "#f59e0b", closingDay: 6, dueDay: 15, logo: `./static/logos/bmg.svg?${LOGO_VERSION}`, networkLogo: `./static/logos/mastercard.svg?${LOGO_VERSION}` },
 ];
 
+function getLocalServerUrl() {
+  return "http://127.0.0.1:8765";
+}
+
 function getBrandMark(item, entryType) {
   if (item.networkLogo) {
     return `<img class="network-logo" src="${escapeHtml(item.networkLogo)}" alt="Bandeira do cartão" />`;
@@ -138,6 +142,38 @@ function escapeHtml(value) {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
+}
+
+function isDesktopMode() {
+  return Boolean(window.pywebview && window.pywebview.api);
+}
+
+function isBrowserLocalMode() {
+  return !isDesktopMode() && window.location.protocol.startsWith("http");
+}
+
+function getConnectionErrorMessage() {
+  const localUrl = getLocalServerUrl();
+  if (window.location.protocol === "file:") {
+    return `Abra o Integra MF pelo navegador em ${localUrl}. Se quiser, use o arquivo start_local.command para iniciar tudo automaticamente.`;
+  }
+  return `Falha de conexão com o servidor. Abra o Integra MF em ${localUrl} e tente novamente.`;
+}
+
+async function fileToPayload(file) {
+  const buffer = await file.arrayBuffer();
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return {
+    filename: file.name,
+    type: file.type,
+    lastModified: file.lastModified,
+    content: window.btoa(binary),
+  };
 }
 
 function saveUiState() {
@@ -667,62 +703,79 @@ async function processFiles() {
 
   let payload;
   try {
-    payload = await new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      currentRequest = xhr;
+    if (isDesktopMode()) {
+      currentRequest = { abort() {} };
       let simulatedPercent = 4;
-      let receivedHeaders = false;
       const progressFallback = window.setInterval(() => {
-        if (receivedHeaders) return;
-        simulatedPercent = Math.min(simulatedPercent + 4, 74);
-        setProgress(simulatedPercent, "Enviando arquivos", "Subindo os arquivos e preparando o OCR.");
-      }, 500);
-      xhr.open("POST", "/api/process");
-      xhr.upload.onprogress = (event) => {
-        if (!event.lengthComputable) return;
-        const percent = (event.loaded / event.total) * 72;
-        setProgress(percent, "Enviando arquivos", "Fazendo upload dos prints e extratos.");
-      };
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED) {
-          receivedHeaders = true;
+        simulatedPercent = Math.min(simulatedPercent + 5, 90);
+        setProgress(simulatedPercent, simulatedPercent < 78 ? "Enviando arquivos" : "Lendo arquivos", "Processando os arquivos localmente.");
+      }, 450);
+      const filesPayload = [];
+      for (const file of state.files) {
+        filesPayload.push(await fileToPayload(file));
+      }
+      payload = await window.pywebview.api.process_files({ files: filesPayload });
+      window.clearInterval(progressFallback);
+    } else {
+      payload = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        currentRequest = xhr;
+        let simulatedPercent = 4;
+        let receivedHeaders = false;
+        const progressFallback = window.setInterval(() => {
+          if (receivedHeaders) return;
+          simulatedPercent = Math.min(simulatedPercent + 4, 74);
+          setProgress(simulatedPercent, "Enviando arquivos", "Subindo os arquivos e preparando o OCR.");
+        }, 500);
+        xhr.open("POST", "/api/process");
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return;
+          const percent = (event.loaded / event.total) * 72;
+          setProgress(percent, "Enviando arquivos", "Fazendo upload dos prints e extratos.");
+        };
+        xhr.onreadystatechange = () => {
+          if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED) {
+            receivedHeaders = true;
+            window.clearInterval(progressFallback);
+            setProgress(82, "Lendo arquivos", "OCR e parser estão analisando os anexos.");
+          }
+          if (xhr.readyState === XMLHttpRequest.LOADING) {
+            setProgress(92, "Finalizando leitura", "Organizando os lançamentos entendidos.");
+          }
+        };
+        xhr.onload = () => {
           window.clearInterval(progressFallback);
-          setProgress(82, "Lendo arquivos", "OCR e parser estão analisando os anexos.");
-        }
-        if (xhr.readyState === XMLHttpRequest.LOADING) {
-          setProgress(92, "Finalizando leitura", "Organizando os lançamentos entendidos.");
-        }
-      };
-      xhr.onload = () => {
-        window.clearInterval(progressFallback);
-        try {
-          resolve({
-            ok: xhr.status >= 200 && xhr.status < 300,
-            status: xhr.status,
-            json: JSON.parse(xhr.responseText || "{}"),
-          });
-        } catch (error) {
-          reject(error);
-        }
-      };
-      xhr.onerror = () => {
-        window.clearInterval(progressFallback);
-        reject(new Error("Falha de conexão com o servidor. Abra o Integra MF pelo servidor local em http://127.0.0.1:8765 e tente novamente."));
-      };
-      xhr.onabort = () => {
-        window.clearInterval(progressFallback);
-        reject(new Error("Leitura interrompida pelo usuário."));
-      };
-      xhr.send(formData);
-    });
+          try {
+            resolve({
+              ok: xhr.status >= 200 && xhr.status < 300,
+              status: xhr.status,
+              json: JSON.parse(xhr.responseText || "{}"),
+            });
+          } catch (error) {
+            reject(error);
+          }
+        };
+        xhr.onerror = () => {
+          window.clearInterval(progressFallback);
+          reject(new Error(getConnectionErrorMessage()));
+        };
+        xhr.onabort = () => {
+          window.clearInterval(progressFallback);
+          reject(new Error("Leitura interrompida pelo usuário."));
+        };
+        xhr.send(formData);
+      });
+    }
   } catch (error) {
     hideProgress();
     renderDiagnostics([error.message || "Falha ao processar os arquivos."]);
     return;
   }
 
-  const response = { ok: payload.ok, status: payload.status };
-  const body = payload.json;
+  const response = isDesktopMode()
+    ? { ok: !payload.error, status: payload.error ? 400 : 200 }
+    : { ok: payload.ok, status: payload.status };
+  const body = isDesktopMode() ? payload : payload.json;
   if (!response.ok) {
     hideProgress();
     renderDiagnostics([body.error || "Falha ao processar os arquivos."]);
@@ -783,9 +836,9 @@ async function stopProcessing({ clearFiles = true } = {}) {
 
 async function loadOverrides() {
   try {
-    const response = await fetch("/api/overrides");
-    if (!response.ok) return;
-    const payload = await response.json();
+    const payload = isDesktopMode()
+      ? await window.pywebview.api.get_overrides()
+      : await (await fetch("/api/overrides")).json();
     state.overrides = payload.overrides || [];
     renderOverrides();
   } catch (_error) {
@@ -796,9 +849,9 @@ async function loadOverrides() {
 
 async function loadReferenceData() {
   try {
-    const response = await fetch("/api/reference");
-    if (!response.ok) return;
-    const payload = await response.json();
+    const payload = isDesktopMode()
+      ? await window.pywebview.api.get_reference()
+      : await (await fetch("/api/reference")).json();
     state.reference = {
       accounts: payload.accounts || [],
       cards: payload.cards || [],
@@ -813,13 +866,14 @@ async function saveOverride(index) {
   const record = state.records[index];
   if (!record) return;
   renderDiagnostics(["Salvando override de aprendizado..."]);
-  const response = await fetch("/api/overrides", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ record }),
-  });
-  const payload = await response.json();
-  if (!response.ok) {
+  const payload = isDesktopMode()
+    ? await window.pywebview.api.save_override({ record })
+    : await (await fetch("/api/overrides", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ record }),
+    })).json();
+  if (payload.error) {
     renderDiagnostics([payload.error || "Falha ao salvar override."]);
     return;
   }
@@ -841,21 +895,29 @@ async function exportCsv() {
     renderDiagnostics(["Marque ao menos uma linha para exportar."]);
     return;
   }
-  const response = await fetch("/api/export", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ records }),
-  });
-  if (!response.ok) {
-    renderDiagnostics(["Falha ao gerar o CSV."]);
-    return;
+  let blob;
+  let filename = "minhasfinancas.csv";
+  if (isDesktopMode()) {
+    const payload = await window.pywebview.api.export_csv({ records });
+    const bytes = Uint8Array.from(window.atob(payload.content), (char) => char.charCodeAt(0));
+    blob = new Blob([bytes], { type: "text/csv;charset=utf-8" });
+    filename = payload.filename || filename;
+  } else {
+    const response = await fetch("/api/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ records }),
+    });
+    if (!response.ok) {
+      renderDiagnostics(["Falha ao gerar o CSV."]);
+      return;
+    }
+    blob = await response.blob();
   }
-
-  const blob = await response.blob();
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = "minhasfinancas.csv";
+  anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
 }
@@ -895,6 +957,9 @@ initTheme();
 loadReferenceData();
 loadOverrides();
 restoreUiState();
+if (!isDesktopMode() && window.location.protocol === "file:") {
+  renderDiagnostics([getConnectionErrorMessage()]);
+}
 restoreFiles().then((files) => {
   state.files = files;
   renderSelectedFiles();
