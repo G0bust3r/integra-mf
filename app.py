@@ -6,13 +6,14 @@ import io
 import json
 import mimetypes
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import unicodedata
 import zipfile
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from email.parser import BytesParser
 from email.policy import default as default_policy
 from http import HTTPStatus
@@ -25,9 +26,11 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "static"
+INDEX_FILE = ROOT / "index.html"
 OCR_SCRIPT = ROOT / "scripts" / "ocr.swift"
 HOST = "127.0.0.1"
 PORT = 8765
+TESSERACT_BIN = "tesseract"
 
 DATE_PATTERNS = [
     "%d/%m/%Y",
@@ -42,6 +45,7 @@ DATE_PATTERNS = [
 
 AMOUNT_RE = re.compile(r"[-+]?\s*(?:R\$\s*)?(?:\d{1,3}(?:[.\s]\d{3})+|\d+)(?:[.,]\d{2})")
 DATE_RE = re.compile(r"\b\d{2}[\/\-.]\d{2}(?:[\/\-.]\d{2,4})?\b")
+TIME_RE = re.compile(r"\b\d{1,2}(?:h|:)\d{2}\b", re.IGNORECASE)
 IGNORE_TOKENS = {
     "saldo",
     "saldo anterior",
@@ -51,6 +55,28 @@ IGNORE_TOKENS = {
     "total",
     "pagamento efetuado",
     "pagamento recebido",
+}
+SCREEN_IGNORE_TOKENS = {
+    "movimentacoes",
+    "movimentações",
+    "buscar",
+    "credito",
+    "crédito",
+    "debito",
+    "débito",
+    "ver minhas faturas",
+    "saldo em conta",
+    "recentes",
+    "futuras",
+    "hoje",
+    "ontem",
+}
+GENERIC_OPERATION_TOKENS = {
+    "compra a vista",
+    "compra à vista",
+    "compra realizada",
+    "pix enviado",
+    "com saldo",
 }
 
 
@@ -102,9 +128,13 @@ def clean_description(value: str) -> str:
 
 
 def parse_amount(value: str) -> str:
-    raw = value.strip().replace("R$", "").replace(" ", "")
-    if not raw:
+    normalized = value.strip().upper().replace("R$", "").replace("RS", "").replace(" ", "")
+    if not normalized:
         return ""
+    match = re.search(r"[-+]?(?:\d{1,3}(?:[.\s]\d{3})+|\d+)(?:[.,]\d{2})", normalized)
+    if not match:
+        return ""
+    raw = match.group(0)
     sign = "-"
     if raw.startswith("+"):
         sign = ""
@@ -135,6 +165,16 @@ def parse_date(value: str) -> str:
     text = value.strip()
     if not text:
         return ""
+    if re.fullmatch(r"\d+(?:\.0+)?", text):
+        try:
+            serial = int(float(text))
+            if serial > 59:
+                serial -= 1
+            base = datetime(1899, 12, 31)
+            dt = base.fromordinal(base.toordinal() + serial)
+            return dt.strftime("%d/%m/%Y")
+        except ValueError:
+            pass
     for fmt in DATE_PATTERNS:
         try:
             dt = datetime.strptime(text, fmt)
@@ -354,6 +394,111 @@ def parse_text_line(line: str, source_file: str, source_type: str) -> ParsedReco
     )
 
 
+def resolve_relative_date(label: str, base_date: datetime) -> str:
+    token = normalize_text(label)
+    if token == "hoje":
+        return base_date.strftime("%d/%m/%Y")
+    if token == "ontem":
+        return (base_date - timedelta(days=1)).strftime("%d/%m/%Y")
+    parsed = parse_date(label)
+    return parsed or base_date.strftime("%d/%m/%Y")
+
+
+def is_amount_line(line: str) -> bool:
+    return bool(AMOUNT_RE.search(line)) and ("R$" in line or line.strip().startswith("-") or line.strip().startswith("+"))
+
+
+def is_noise_line(line: str) -> bool:
+    compact = clean_description(line)
+    token = normalize_text(compact)
+    if not token:
+        return True
+    if token in SCREEN_IGNORE_TOKENS:
+        return True
+    if len(token) <= 2 and not AMOUNT_RE.search(compact):
+        return True
+    if re.fullmatch(r"[\W_]+", compact):
+        return True
+    if re.fullmatch(r"[a-z0-9]{1,3}", token) and not TIME_RE.search(compact):
+        return True
+    return False
+
+
+def parse_ocr_statement_lines(lines: list[str], source_file: str, reference_date: datetime) -> list[ParsedRecord]:
+    records: list[ParsedRecord] = []
+    current_date = reference_date.strftime("%d/%m/%Y")
+    block: list[str] = []
+    active_section = False
+
+    def flush(candidate_lines: list[str], due_date: str) -> None:
+        filtered = [repair_text(line).strip() for line in candidate_lines if repair_text(line).strip() and not is_noise_line(line)]
+        if not filtered:
+            return
+        amount_line = next((line for line in reversed(filtered) if is_amount_line(line)), "")
+        if not amount_line:
+            return
+        amount = parse_amount(amount_line)
+        if not amount:
+            return
+        body = [line for line in filtered if line != amount_line]
+        time_line = next((line for line in reversed(body) if TIME_RE.search(line)), "")
+        if time_line:
+            body = [line for line in body if line != time_line]
+        body = [line for line in body if normalize_text(line) not in SCREEN_IGNORE_TOKENS and "saldo do dia" not in normalize_text(line)]
+        if not body:
+            return
+        description = ""
+        candidates = sorted(body, key=lambda item: (normalize_text(item) in GENERIC_OPERATION_TOKENS, -len(clean_description(item))))
+        for line in candidates:
+            if normalize_text(line) not in GENERIC_OPERATION_TOKENS:
+                description = clean_description(line)
+                break
+        if not description:
+            description = clean_description(body[0])
+        if not description:
+            return
+        observations_parts = [line for line in body if clean_description(line) != description]
+        if time_line:
+            observations_parts.append(f"Hora {time_line}")
+        observations = " | ".join(part for part in observations_parts if part)
+        records.append(
+            ParsedRecord(
+                source_file=source_file,
+                source_type="ocr",
+                description=description,
+                amount=amount,
+                due_date=due_date,
+                observations=observations,
+                raw_text=" | ".join(filtered),
+                confidence=0.83,
+            )
+        )
+
+    for line in [repair_text(item).strip() for item in lines if repair_text(item).strip()]:
+        token = normalize_text(line)
+        if token in {"hoje", "ontem"} or DATE_RE.search(line):
+            if block:
+                flush(block, current_date)
+                block = []
+            current_date = resolve_relative_date(line, reference_date)
+            active_section = True
+            continue
+        if not active_section:
+            continue
+        if token in SCREEN_IGNORE_TOKENS or "saldo do dia" in token:
+            continue
+        if is_noise_line(line):
+            continue
+        block.append(line)
+        if is_amount_line(line):
+            flush(block, current_date)
+            block = []
+
+    if block:
+        flush(block, current_date)
+    return records
+
+
 def parse_rows(rows: list[list[str]], source_file: str, source_type: str) -> tuple[list[ParsedRecord], list[str]]:
     diagnostics: list[str] = []
     parsed: list[ParsedRecord] = []
@@ -426,7 +571,46 @@ def parse_ofx_text(text: str, source_file: str) -> list[ParsedRecord]:
     return records
 
 
+def render_pdf_preview(path: Path, temp_dir: Path) -> Path:
+    command = ["qlmanage", "-t", "-s", "2200", "-o", str(temp_dir), str(path)]
+    result = subprocess.run(command, capture_output=True, text=True, cwd=str(ROOT))
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "Falha ao converter PDF para imagem.")
+    candidate = temp_dir / f"{path.name}.png"
+    if candidate.exists():
+        return candidate
+    previews = sorted(temp_dir.glob("*.png"))
+    if previews:
+        return previews[0]
+    raise RuntimeError("Nao foi possivel gerar uma imagem de pre-visualizacao do PDF.")
+
+
+def run_tesseract_ocr(path: Path) -> str:
+    with tempfile.TemporaryDirectory(prefix="integra-mf-ocr-") as temp_dir:
+        temp_root = Path(temp_dir)
+        source_path = path
+        if path.suffix.lower() == ".pdf":
+            source_path = render_pdf_preview(path, temp_root)
+        command = [
+            TESSERACT_BIN,
+            str(source_path),
+            "stdout",
+            "-l",
+            "por+eng",
+            "--psm",
+            "11",
+            "-c",
+            "preserve_interword_spaces=1",
+        ]
+        result = subprocess.run(command, capture_output=True, text=True, cwd=str(ROOT))
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "Falha ao executar OCR com Tesseract.")
+        return result.stdout
+
+
 def run_ocr(path: Path) -> str:
+    if shutil.which(TESSERACT_BIN):
+        return run_tesseract_ocr(path)
     command = ["swift", str(OCR_SCRIPT), str(path)]
     result = subprocess.run(command, capture_output=True, text=True, cwd=str(ROOT))
     if result.returncode != 0:
@@ -461,11 +645,13 @@ def parse_file(path: Path, original_name: str) -> tuple[list[ParsedRecord], list
     if extension in {".png", ".jpg", ".jpeg", ".heic", ".pdf"}:
         ocr_output = run_ocr(path)
         lines = [line.strip() for line in ocr_output.splitlines() if line.strip()]
-        records = []
-        for line in lines:
-            record = parse_text_line(line, original_name, "ocr")
-            if record:
-                records.append(record)
+        reference_date = datetime.fromtimestamp(path.stat().st_mtime)
+        records = parse_ocr_statement_lines(lines, original_name, reference_date)
+        if not records:
+            for line in lines:
+                record = parse_text_line(line, original_name, "ocr")
+                if record:
+                    records.append(record)
         if not records:
             diagnostics.append(f"{original_name}: OCR executado, mas revise manualmente as linhas.")
         return records, diagnostics
@@ -481,16 +667,26 @@ def encode_csv(records: Iterable[dict]) -> str:
         description = clean_description(str(item.get("description", "")))
         amount = format_amount(str(item.get("amount", "")))
         due_date = parse_date(str(item.get("due_date", "")))
+        entry_type = str(item.get("entry_type", "account")).strip() or "account"
         if not description or not amount or not due_date:
             continue
+        try:
+            numeric_amount = abs(float(amount))
+            amount = f"{numeric_amount:.2f}"
+        except ValueError:
+            continue
+        account = str(item.get("account", "")).strip()
+        card = str(item.get("card", "")).strip()
+        if entry_type != "credit_card":
+            card = ""
         row = [
             description,
             amount,
             due_date,
             str(item.get("category", "")).strip(),
             str(item.get("subcategory", "")).strip(),
-            str(item.get("account", "")).strip(),
-            str(item.get("card", "")).strip(),
+            account,
+            card,
             str(item.get("observations", "")).strip(),
         ]
         launch_date = str(item.get("launch_date", "")).strip()
@@ -525,8 +721,8 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path == "/":
-            self.serve_file(STATIC_DIR / "index.html")
+        if parsed.path in {"/", "/index.html"}:
+            self.serve_file(INDEX_FILE)
             return
         if parsed.path.startswith("/static/"):
             target = STATIC_DIR / parsed.path.removeprefix("/static/")

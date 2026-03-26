@@ -1,6 +1,7 @@
 const state = {
   files: [],
   records: [],
+  understood: [],
 };
 
 const els = {
@@ -8,20 +9,23 @@ const els = {
   selectedFiles: document.getElementById("selectedFiles"),
   diagnostics: document.getElementById("diagnostics"),
   processBtn: document.getElementById("processBtn"),
-  sampleBtn: document.getElementById("sampleBtn"),
   applyDefaultsBtn: document.getElementById("applyDefaultsBtn"),
   clearBtn: document.getElementById("clearBtn"),
   exportBtn: document.getElementById("exportBtn"),
-  recordsBody: document.getElementById("recordsBody"),
+  recordsEditor: document.getElementById("recordsEditor"),
+  understoodList: document.getElementById("understoodList"),
   recordCount: document.getElementById("recordCount"),
   selectedCount: document.getElementById("selectedCount"),
-  rowTemplate: document.getElementById("rowTemplate"),
+  recordTemplate: document.getElementById("recordTemplate"),
   defaultAccount: document.getElementById("defaultAccount"),
   defaultCard: document.getElementById("defaultCard"),
   defaultDueDate: document.getElementById("defaultDueDate"),
   defaultObservation: document.getElementById("defaultObservation"),
-  rulesText: document.getElementById("rulesText"),
+  entryTypes: document.querySelectorAll('input[name="entryType"]'),
+  themeToggle: document.getElementById("themeToggle"),
 };
+
+const THEME_KEY = "integra-mf-theme";
 
 function escapeHtml(value) {
   return value
@@ -38,6 +42,19 @@ function normalizeText(value) {
     .trim();
 }
 
+function setTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  if (els.themeToggle) {
+    els.themeToggle.textContent = theme === "dark" ? "Modo claro" : "Modo escuro";
+  }
+  window.localStorage.setItem(THEME_KEY, theme);
+}
+
+function initTheme() {
+  const savedTheme = window.localStorage.getItem(THEME_KEY);
+  setTheme(savedTheme || "dark");
+}
+
 function renderSelectedFiles() {
   els.selectedFiles.innerHTML = state.files.length
     ? state.files.map((file) => `<li>${escapeHtml(file.name)} <small>(${Math.round(file.size / 1024) || 1} KB)</small></li>`).join("")
@@ -50,25 +67,13 @@ function renderDiagnostics(messages = []) {
     : "";
 }
 
-function getRules() {
-  return els.rulesText.value
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [keywordPart, mappingPart] = line.split("=");
-      const [category = "", subcategory = ""] = (mappingPart || "").split(">");
-      return {
-        keyword: normalizeText(keywordPart || ""),
-        category: category.trim(),
-        subcategory: subcategory.trim(),
-      };
-    })
-    .filter((rule) => rule.keyword && rule.category);
+function getSelectedEntryType() {
+  const selected = Array.from(els.entryTypes).find((input) => input.checked);
+  return selected ? selected.value : "account";
 }
 
 function applyDefaults() {
-  const rules = getRules();
+  const entryType = getSelectedEntryType();
   const account = els.defaultAccount.value.trim();
   const card = els.defaultCard.value.trim();
   const dueDate = els.defaultDueDate.value.trim();
@@ -76,21 +81,20 @@ function applyDefaults() {
 
   state.records = state.records.map((record) => {
     const next = { ...record };
+    next.entry_type = next.entry_type || entryType;
     if (!next.account && account) next.account = account;
     if (!next.card && card) next.card = card;
     if (!next.due_date && dueDate) next.due_date = dueDate;
     if (!next.observations && observation) next.observations = observation;
-
-    const normalizedDescription = normalizeText(next.description || "");
-    const matchedRule = rules.find((rule) => normalizedDescription.includes(rule.keyword));
-    if (matchedRule) {
-      if (!next.category) next.category = matchedRule.category;
-      if (!next.subcategory) next.subcategory = matchedRule.subcategory;
+    if (next.entry_type !== "credit_card") {
+      next.card = "";
+    } else if (!next.card && card) {
+      next.card = card;
     }
     return next;
   });
 
-  renderRows();
+  renderEditors();
 }
 
 function updateCounters() {
@@ -103,26 +107,49 @@ function onFieldChange(index, field, value) {
     state.records[index][field] = Boolean(value);
   } else {
     state.records[index][field] = value;
+    if (field === "entry_type" && value !== "credit_card") {
+      state.records[index].card = "";
+    }
   }
-  updateCounters();
+  renderEditors();
 }
 
-function renderRows() {
+function renderUnderstood() {
+  if (!state.understood.length) {
+    els.understoodList.innerHTML = '<div class="empty-box">Nada processado ainda.</div>';
+    return;
+  }
+  els.understoodList.innerHTML = state.understood
+    .map(
+      (item) => `
+        <article class="understood-item">
+          <strong>${escapeHtml(item.source)}</strong>
+          <pre>${escapeHtml(item.text || "Sem texto bruto disponível.")}</pre>
+        </article>
+      `,
+    )
+    .join("");
+}
+
+function renderEditors() {
   if (!state.records.length) {
-    els.recordsBody.innerHTML = '<tr class="empty-state"><td colspan="11">Nenhum lançamento carregado ainda.</td></tr>';
+    els.recordsEditor.innerHTML = '<div class="empty-box">Nenhum lançamento carregado ainda.</div>';
     updateCounters();
     return;
   }
 
   const fragment = document.createDocumentFragment();
   state.records.forEach((record, index) => {
-    const clone = els.rowTemplate.content.firstElementChild.cloneNode(true);
-    clone.querySelector(".source-cell").textContent = `${record.source_file} · ${(record.confidence || 0).toFixed(2)}`;
+    const clone = els.recordTemplate.content.firstElementChild.cloneNode(true);
+    clone.querySelector(".source-chip").textContent = `${record.source_file} · confiança ${(record.confidence || 0).toFixed(2)}`;
     clone.querySelectorAll("[data-field]").forEach((input) => {
       const field = input.dataset.field;
       if (field === "selected") {
         input.checked = record.selected !== false;
         input.addEventListener("change", (event) => onFieldChange(index, field, event.target.checked));
+      } else if (input.tagName === "SELECT") {
+        input.value = record[field] || "account";
+        input.addEventListener("change", (event) => onFieldChange(index, field, event.target.value));
       } else {
         input.value = record[field] || "";
         input.addEventListener("input", (event) => onFieldChange(index, field, event.target.value));
@@ -131,8 +158,8 @@ function renderRows() {
     fragment.appendChild(clone);
   });
 
-  els.recordsBody.innerHTML = "";
-  els.recordsBody.appendChild(fragment);
+  els.recordsEditor.innerHTML = "";
+  els.recordsEditor.appendChild(fragment);
   updateCounters();
 }
 
@@ -156,8 +183,22 @@ async function processFiles() {
     return;
   }
 
-  state.records = (payload.records || []).map((record) => ({ ...record, selected: true }));
+  const entryType = getSelectedEntryType();
+  state.records = (payload.records || []).map((record) => ({
+    ...record,
+    selected: true,
+    entry_type: entryType,
+    amount: record.amount ? String(Math.abs(Number(record.amount) || 0).toFixed(2)) : "",
+    due_date: record.due_date || els.defaultDueDate.value.trim(),
+    account: record.account || els.defaultAccount.value.trim(),
+    card: entryType === "credit_card" ? record.card || els.defaultCard.value.trim() : "",
+  }));
+  state.understood = state.records.map((record) => ({
+    source: record.source_file,
+    text: record.raw_text || "",
+  }));
   applyDefaults();
+  renderUnderstood();
   renderDiagnostics(payload.diagnostics || [`${payload.count || 0} linhas reconhecidas.`]);
 }
 
@@ -186,30 +227,32 @@ async function exportCsv() {
   URL.revokeObjectURL(url);
 }
 
-async function loadSample() {
-  const sampleUrl = "file:///Users/lmv/Downloads/exemplo.xlsx";
-  renderDiagnostics([
-    "Para testar com o exemplo.xlsx, selecione o arquivo manualmente no campo acima. Navegadores bloqueiam leitura direta de file:// por seguranca.",
-  ]);
-  console.debug(sampleUrl);
-}
-
 els.filesInput.addEventListener("change", (event) => {
   state.files = Array.from(event.target.files || []);
   renderSelectedFiles();
 });
 els.processBtn.addEventListener("click", processFiles);
-els.sampleBtn.addEventListener("click", loadSample);
 els.applyDefaultsBtn.addEventListener("click", applyDefaults);
+els.entryTypes.forEach((input) => input.addEventListener("change", applyDefaults));
 els.clearBtn.addEventListener("click", () => {
   state.files = [];
   state.records = [];
+  state.understood = [];
   els.filesInput.value = "";
   renderSelectedFiles();
-  renderRows();
+  renderEditors();
+  renderUnderstood();
   renderDiagnostics([]);
 });
 els.exportBtn.addEventListener("click", exportCsv);
+if (els.themeToggle) {
+  els.themeToggle.addEventListener("click", () => {
+    const currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
+    setTheme(currentTheme === "dark" ? "light" : "dark");
+  });
+}
 
+initTheme();
 renderSelectedFiles();
-renderRows();
+renderEditors();
+renderUnderstood();

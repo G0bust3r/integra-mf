@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Integra MF</title>
+    <link rel="stylesheet" href="./static/styles.css?v=4" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="page-header">
+        <div class="header-copy">
+          <p class="eyebrow">Integra MF</p>
+          <h1>Transforme prints e extratos em um CSV limpo para importar no Minhas Finanças</h1>
+          <p class="lede">Envie o arquivo, confira o que foi lido e ajuste manualmente só o que precisar.</p>
+        </div>
+        <div class="header-tools">
+          <button id="themeToggle" class="theme-toggle" type="button" aria-label="Alternar tema">Modo claro</button>
+          <div class="header-stats">
+            <div class="metric-card">
+              <strong id="recordCount">0</strong>
+              <span>linhas</span>
+            </div>
+            <div class="metric-card">
+              <strong id="selectedCount">0</strong>
+              <span>marcadas</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section class="hero-strip">
+        <div class="hero-card">
+          <strong>Importe</strong>
+          <span>prints, XLSX, OFX, CSV e PDF</span>
+        </div>
+        <div class="hero-card">
+          <strong>Confira</strong>
+          <span>o texto entendido antes de exportar</span>
+        </div>
+        <div class="hero-card">
+          <strong>Ajuste</strong>
+          <span>conta, cartão, data e descrição manualmente</span>
+        </div>
+      </section>
+
+      <section class="panel compact-panel">
+        <div class="panel-head">
+          <h2>1. Tipo de importação</h2>
+          <p>Escolha se os lançamentos devem sair como despesa normal na conta ou compra no cartão.</p>
+        </div>
+        <div class="mode-switch">
+          <label class="mode-option">
+            <input type="radio" name="entryType" value="account" checked />
+            <span>Despesa normal na conta</span>
+          </label>
+          <label class="mode-option">
+            <input type="radio" name="entryType" value="credit_card" />
+            <span>Cartão de crédito</span>
+          </label>
+        </div>
+        <div class="defaults-grid">
+          <label>
+            Conta
+            <input id="defaultAccount" placeholder="Ex.: Itaú ou Pic Pay" />
+          </label>
+          <label>
+            Cartão
+            <input id="defaultCard" placeholder="Ex.: Nubank" />
+          </label>
+          <label>
+            Data de vencimento
+            <input id="defaultDueDate" placeholder="DD/MM/AAAA" />
+          </label>
+          <label>
+            Observação padrão
+            <input id="defaultObservation" placeholder="Opcional" />
+          </label>
+        </div>
+      </section>
+
+      <div class="main-grid">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>2. Importar prints e arquivos</h2>
+            <p>Você pode enviar prints, PDF, XLSX, CSV ou OFX.</p>
+          </div>
+          <label class="dropzone" for="files">
+            <input id="files" type="file" multiple accept=".csv,.txt,.xlsx,.ofx,.pdf,.png,.jpg,.jpeg,.heic" />
+            <span>Selecionar arquivos</span>
+            <small>Extratos, faturas, prints e exportações.</small>
+          </label>
+          <div class="actions">
+            <button id="processBtn" class="primary">Ler arquivos</button>
+            <button id="clearBtn" class="ghost" type="button">Limpar</button>
+          </div>
+          <ul id="selectedFiles" class="file-list"></ul>
+          <div id="diagnostics" class="diagnostics"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>3. O que o app entendeu</h2>
+            <p>Leitura bruta do arquivo ou do OCR, organizada para você validar antes da correção.</p>
+          </div>
+          <div id="understoodList" class="understood-list">
+            <div class="empty-box">Nada processado ainda.</div>
+          </div>
+        </section>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head adjust-head">
+          <div>
+            <h2>4. Ajuste manual</h2>
+            <p>Corrija os dados abaixo e exporte o CSV final.</p>
+          </div>
+          <div class="actions tight">
+            <button id="applyDefaultsBtn" class="secondary" type="button">Aplicar padrões</button>
+            <button id="exportBtn" class="primary" type="button">Exportar CSV</button>
+          </div>
+        </div>
+        <div id="recordsEditor" class="records-editor">
+          <div class="empty-box">Nenhum lançamento carregado ainda.</div>
+        </div>
+      </section>
+    </main>
+
+    <template id="recordTemplate">
+      <article class="record-card">
+        <div class="record-top">
+          <label class="check-pill">
+            <input data-field="selected" type="checkbox" checked />
+            <span>Incluir na exportação</span>
+          </label>
+          <div class="source-chip"></div>
+        </div>
+        <label class="read-only-block">
+          Texto entendido
+          <textarea data-field="raw_text" rows="2" readonly></textarea>
+        </label>
+        <div class="editor-grid">
+          <label>
+            Tipo
+            <select data-field="entry_type">
+              <option value="account">Despesa na conta</option>
+              <option value="credit_card">Cartão de crédito</option>
+            </select>
+          </label>
+          <label>
+            Descrição
+            <input data-field="description" />
+          </label>
+          <label>
+            Valor
+            <input data-field="amount" />
+          </label>
+          <label>
+            Data
+            <input data-field="due_date" placeholder="DD/MM/AAAA" />
+          </label>
+          <label>
+            Categoria
+            <input data-field="category" />
+          </label>
+          <label>
+            Subcategoria
+            <input data-field="subcategory" />
+          </label>
+          <label>
+            Conta
+            <input data-field="account" />
+          </label>
+          <label>
+            Cartão
+            <input data-field="card" />
+          </label>
+          <label class="wide">
+            Observações
+            <input data-field="observations" />
+          </label>
+          <label>
+            Data lançamento
+            <input data-field="launch_date" placeholder="DD/MM/AAAA HH:mm" />
+          </label>
+        </div>
+      </article>
+    </template>
+
+    <script src="./static/app.js?v=4"></script>
+  </body>
+</html>
